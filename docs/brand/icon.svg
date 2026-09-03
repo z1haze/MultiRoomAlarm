@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 69 432 432" fill="none">
+  <defs>
+    <linearGradient id="aurora" x1="40" y1="40" x2="472" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="0.38" stop-color="#818CF8"/>
+      <stop offset="0.68" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#D946EF"/>
+    </linearGradient>
+  </defs>
+
+  <g stroke="url(#aurora)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- twin bells -->
+    <path d="M96 150 A70 70 0 0 1 190 84"/>
+    <path d="M416 150 A70 70 0 0 0 322 84"/>
+    <!-- clock body -->
+    <circle cx="256" cy="300" r="156"/>
+    <!-- feet -->
+    <path d="M158 438 L120 486"/>
+    <path d="M354 438 L392 486"/>
+    <!-- hands, set to alarm-o'clock -->
+    <path d="M256 300 L256 196"/>
+    <path d="M256 300 L332 336"/>
+  </g>
+
+  <circle cx="256" cy="300" r="20" fill="url(#aurora)"/>
+</svg>

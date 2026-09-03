@@ -1,0 +1,31 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # The icon ships in custom_components/multi_room_alarm/brand/ and HA
+          # 2026.3+ serves it locally. The HACS action's `brands` check still
+          # wants the domain in home-assistant/brands (for older HA / the HACS
+          # store listing) — submit it there to drop this ignore. See
+          # docs/brand/README.md.
+          ignore: brands

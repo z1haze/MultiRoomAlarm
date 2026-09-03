@@ -1,0 +1,33 @@
+# Multi-Room Alarm Clock — sentence triggers.
+# Installed to <config>/custom_sentences/en/multi_room_alarm.yaml on setup.
+# The room is resolved from the device the command came from.
+language: "en"
+intents:
+  AlarmList:
+    data:
+      - sentences:
+          - "what [are] my alarms [set]"
+          - "(show|list|tell) [me] [my] alarms"
+          - "what alarms (do i have|are set)"
+          - "do i have (any|an) alarm[s] [set]"
+          - "when (is|are) my alarm[s] [set]"
+          - "read [me] my alarms"
+
+  AlarmStop:
+    data:
+      - sentences:
+          - "stop [the] alarm"
+          - "turn off [the] alarm"
+          - "(dismiss|silence|cancel|kill) [the] alarm"
+          - "[i'm] (awake|up)"
+
+  AlarmSnooze:
+    data:
+      - sentences:
+          - "snooze [the] [alarm]"
+          - "snooze for {minutes} [minutes|mins]"
+          - "(give me|just) {minutes} more (minutes|mins)"
+          - "{minutes} more minutes"
+lists:
+  minutes:
+    wildcard: true

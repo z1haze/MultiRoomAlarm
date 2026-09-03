@@ -1,0 +1,15 @@
+{
+  "domain": "multi_room_alarm",
+  "name": "Multi-Room Alarm Clock",
+  "after_dependencies": ["conversation"],
+  "codeowners": ["@z1haze"],
+  "config_flow": true,
+  "dependencies": ["http"],
+  "documentation": "https://github.com/z1haze/MultiRoomAlarm",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/z1haze/MultiRoomAlarm/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

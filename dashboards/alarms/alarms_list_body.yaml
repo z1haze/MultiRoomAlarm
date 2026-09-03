@@ -1,0 +1,85 @@
+# Multi-Room Alarm Clock — the alarms list body (shared, wrapper-agnostic).
+#
+# This is the list itself: empty-state + 8 alarm-row slots, as ONE stack-in-card.
+# No header (the wrapper supplies `alarm_header` so it can set `variables.back`),
+# no view keys. Drop it into whatever frame you want — e.g. a full-screen
+# `type: panel` subview (see alarms_list.yaml), or a floating modal.
+#
+# Needs `button_card_templates: !include alarms/alarms_row_template.yaml` at the
+# dashboard root (for `alarm_header` and `alarm_row`).
+#
+# Room is derived from the URL path: /<room>-dashboard/...  ->  room = "<room>".
+# Tap a row to enable/disable; press-and-hold to delete (confirm). Alarms are
+# created by voice, not here. 8 slots cap how many a room can show; empties hide.
+
+type: custom:stack-in-card
+mode: vertical
+card_mod:
+  style: |
+    :host {
+      --stack-card-gap: 0px;
+      --vertical-stack-card-gap: 0px;
+    }
+    ha-card {
+      background: none; box-shadow: none; border: none;
+      /* clear the fixed alarm_header (see its comment). !important beats
+         stack-in-card's padding normalization. */
+      padding-top: 58px !important;
+    }
+cards:
+  # Empty state — visible only when this room has no alarms.
+  - type: custom:button-card
+    triggers_update: sensor.alarms
+    show_icon: true
+    show_name: true
+    show_label: true
+    icon: mdi:alarm-off
+    name: No alarms set
+    label: Ask your assistant to set one
+    styles:
+      card:
+        - box-shadow: none
+        - background: none
+        - padding: 0 16px
+        - min-height: calc(100vh - 80px)
+        - flex-direction: column
+        - align-items: center
+        - justify-content: center
+        - display: >
+            [[[
+              const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+              const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+              return all.some(a => a.room === room) ? 'none' : 'flex';
+            ]]]
+      icon:
+        - width: 60px
+        - opacity: 0.5
+      name:
+        - font-size: 18px
+      label:
+        - opacity: 0.55
+
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 0 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 1 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 2 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 3 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 4 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 5 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 6 }
+  - type: custom:button-card
+    template: alarm_row
+    variables: { slot: 7 }

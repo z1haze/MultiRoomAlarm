@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Multi-Room Alarm Clock",
+        "description": "Sets up the alarm engine. Add rooms afterwards with the `multi_room_alarm.room_set` service, and alarms by voice or `multi_room_alarm.add`."
+      }
+    },
+    "abort": {
+      "already_configured": "Multi-Room Alarm Clock is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Multi-Room Alarm Clock",
+        "data": {
+          "snooze_minutes": "Default snooze length (minutes)",
+          "default_volume": "Default alarm volume",
+          "tone_url": "Alarm tone URL override (leave blank to use the built-in tone)",
+          "weather_entity": "Weather entity for the ringing screen (blank = auto-detect)",
+          "clock_entity": "Clock/time entity for the ringing screen (blank = browser clock)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "alarm_ringing": {
+        "name": "Alarm ringing"
+      },
+      "alarm_snoozed": {
+        "name": "Alarm snoozed"
+      }
+    },
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "alarms": {
+        "name": "Alarms"
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+# Multi-Room Alarm Clock — the alarms list as a full-screen subview.
+#
+# The default wrapper: header + list body filling the screen. Wire in at the
+# dashboard root:
+#
+#   button_card_templates: !include alarms/alarms_row_template.yaml
+#   views:
+#     - !include alarms/alarms_list.yaml
+#
+# The list body (alarms_list_body.yaml) is separate so you can also frame it as
+# a modal or embed it elsewhere. Room is derived from the URL path, so the
+# dashboard's url_path MUST be "<roomid>-dashboard" and <roomid> must match a
+# room in the integration. The ringing overlay goes on the Home view, not here.
+
+title: Alarms
+path: alarms
+subview: true
+icon: mdi:alarm
+type: panel
+
+cards:
+  - type: custom:stack-in-card
+    mode: vertical
+    card_mod:
+      style: |
+        :host { --stack-card-gap: 0px; --vertical-stack-card-gap: 0px; }
+        ha-card { background: none; box-shadow: none; border: none; }
+    cards:
+      # No variables.back -> the header derives "back" from the URL (dashboard
+      # home). The header pins itself (position: sticky) while the page scrolls.
+      - type: custom:button-card
+        template: alarm_header
+      - !include alarms_list_body.yaml

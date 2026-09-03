@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example room dashboard for the Multi-Room Alarm Clock.
+#
+# A minimal, room-agnostic dashboard: a Home view showing the next alarm with
+# the full-screen ringing overlay, and an Alarms subview listing this room's
+# alarms. Copy this file (and the `alarms/` folder next to it) into your HA
+# config's `dashboards/` folder, then register it in configuration.yaml:
+#
+#   lovelace:
+#     mode: storage
+#     dashboards:
+#       bedroom-dashboard:            # <-- url_path MUST be "<roomid>-dashboard"
+#         mode: yaml
+#         title: Bedroom
+#         filename: dashboards/example-room.yaml
+#         show_in_sidebar: true
+#
+# The room is derived from the URL path: /<roomid>-dashboard/... -> "<roomid>".
+# So "bedroom-dashboard" means this dashboard drives the "bedroom" room, and you
+# must have created that room with `multi_room_alarm.room_set room_id: bedroom`.
+#
+# HACS cards used by these files: card-mod, button-card, mushroom, stack-in-card,
+# layout-card (custom:grid-layout). Install those first.
+# ─────────────────────────────────────────────────────────────────────────────
+
+title: Bedroom
+
+button_card_templates: !include alarms/alarms_row_template.yaml
+
+views:
+  # ── Home ────────────────────────────────────────────────────────────────
+  - title: Home
+    path: home
+    type: custom:grid-layout
+    layout:
+      height: 100%
+      grid-template-columns: 1fr
+      grid-template-rows: 1fr min-content 1fr
+      grid-template-areas: |
+        "."
+        "main"
+        "."
+    cards:
+      # Next alarm + a link to the list. Reads sensor.<room>_next_alarm, where
+      # <room> is resolved server-side; the entity id is <room>-shaped, so match
+      # it from the URL.
+      - type: custom:button-card
+        view_layout:
+          grid-area: main
+        triggers_update: all
+        icon: mdi:alarm
+        name: >
+          [[[
+            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+            const st = Object.values(hass.states).find(
+              s => s.entity_id.endsWith('_next_alarm') && s.attributes.room === room
+            );
+            if (!st || !st.state || st.state === 'unknown') return 'No alarm set';
+            const d = new Date(st.state);
+            return d.toLocaleString(undefined,
+              { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+          ]]]
+        tap_action:
+          action: navigate
+          navigation_path: >
+            [[[ return location.pathname.replace(/\/[^/]*$/, '') + '/alarms'; ]]]
+        styles:
+          card:
+            - padding: 24px 32px
+          name:
+            - font-size: 22px
+          icon:
+            - width: 40px
+
+      # Full-screen ringing overlay — takes over while this room's alarm rings.
+      - !include alarms/alarms_ringing.yaml
+
+  # ── Alarms (subview) ────────────────────────────────────────────────────
+  - !include alarms/alarms_list.yaml

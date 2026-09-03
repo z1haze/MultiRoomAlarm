@@ -1,0 +1,197 @@
+# Multi-Room Alarm Clock — the ringing overlay (Alexa-style).
+#
+# A single card. !include it (`- !include alarms/alarms_ringing.yaml`) into every view
+# where a firing alarm should take over the screen — the Home view of each
+# dashboard, plus the alarms list.
+#
+# position:fixed, covers the viewport while this room's
+# binary_sensor.<...>_alarm_ringing (matched by its `room` attribute) is "on".
+# Room is derived from the dashboard URL path. Plain Lovelace, no browser_mod,
+# so it appears the instant the state flips.
+
+type: custom:button-card
+# No `entity:` — the ringing entity is per-room (derived from the URL) and a
+# templated entity doesn't get a first-render binding, which left the overlay
+# stuck visible. Instead every template reads hass.states directly, and
+# triggers_update: all re-renders it on any state change (cheap while hidden).
+triggers_update: all
+tap_action:
+  action: none
+show_icon: false
+show_name: false
+show_label: false
+custom_fields:
+  weather:
+    card:
+      type: custom:button-card
+      template: weather_chip
+      variables:
+        color: rgba(255,255,255,0.9)
+        size: 26
+  # `clock_entity` (integration option) is used for the hour/minute if it's set
+  # and its state looks like "HH:MM" (e.g. sensor.time); otherwise the browser
+  # clock.
+  greeting: >
+    [[[
+      const ce = states['sensor.alarms']?.attributes?.clock_entity;
+      const cs = ce && states[ce] && states[ce].state;
+      const h = (cs && /^\d{1,2}:/.test(cs)) ? parseInt(cs, 10) : new Date().getHours();
+      return h < 12 ? 'Good morning!' : (h < 18 ? 'Good afternoon!' : 'Good evening!');
+    ]]]
+  clock: >
+    [[[
+      const ce = states['sensor.alarms']?.attributes?.clock_entity;
+      const cs = ce && states[ce] && states[ce].state;
+      let h, m;
+      if (cs && /^\d{1,2}:\d{2}/.test(cs)) { [h, m] = cs.split(':').map(Number); }
+      else { const d = new Date(); h = d.getHours(); m = d.getMinutes(); }
+      const ap = h < 12 ? 'a.m.' : 'p.m.';
+      h = h % 12 || 12;
+      return `It's <b>${h}:${String(m).padStart(2, '0')}</b> ${ap}`;
+    ]]]
+  snooze:
+    card:
+      type: custom:button-card
+      show_name: true
+      show_icon: false
+      name: Snooze
+      tap_action:
+        action: call-service
+        service: multi_room_alarm.snooze
+        data:
+          room: >
+            [[[ return (location.pathname.split('/')[1] || '').split('-dashboard')[0]; ]]]
+      styles:
+        card:
+          - background: transparent
+          - border: 1.5px solid rgba(255,255,255,0.5)
+          - box-shadow: none
+          - border-radius: 999px
+          - padding: 16px 40px
+          - color: white
+        name:
+          - font-size: 20px
+          - font-style: italic
+          - font-family: Georgia, 'Times New Roman', serif
+          - white-space: nowrap
+  stop:
+    card:
+      type: custom:button-card
+      show_name: true
+      show_icon: false
+      name: Stop
+      tap_action:
+        action: call-service
+        service: multi_room_alarm.stop
+        data:
+          room: >
+            [[[ return (location.pathname.split('/')[1] || '').split('-dashboard')[0]; ]]]
+      styles:
+        card:
+          - background: rgba(255,255,255,0.18)
+          - border: none
+          - box-shadow: none
+          - border-radius: 999px
+          - padding: 16px 72px
+          - color: white
+        name:
+          - font-size: 20px
+          - font-style: italic
+          - font-family: Georgia, 'Times New Roman', serif
+          - white-space: nowrap
+  hint: >
+    [[[ return 'Tap Snooze or Stop'; ]]]
+# Aurora background: a big blurred multi-blob pseudo-element drifting behind the
+# content. card_mod (not styles.card) because it needs @keyframes and ::before.
+card_mod:
+  style: |
+    ha-card {
+      background: #0a0d18 !important;
+      overflow: hidden;
+    }
+    ha-card::before {
+      content: "";
+      position: absolute;
+      inset: -35%;
+      z-index: 0;
+      background:
+        radial-gradient(38% 48% at 18% 28%, rgba(56,189,248,0.45), transparent 70%),
+        radial-gradient(42% 52% at 78% 22%, rgba(129,140,248,0.45), transparent 70%),
+        radial-gradient(48% 58% at 45% 82%, rgba(45,212,191,0.40), transparent 70%),
+        radial-gradient(40% 50% at 88% 72%, rgba(217,70,239,0.32), transparent 72%);
+      filter: blur(34px);
+      will-change: transform;
+      animation: alarm-aurora 20s ease-in-out infinite alternate;
+    }
+    @keyframes alarm-aurora {
+      0%   { transform: translate(-6%, -4%) rotate(0deg)  scale(1.1); }
+      50%  { transform: translate(5%, 3%)   rotate(9deg)  scale(1.28); }
+      100% { transform: translate(-3%, 6%)  rotate(-7deg) scale(1.16); }
+    }
+styles:
+  card:
+    - position: fixed
+    - inset: '0'
+    - z-index: '9999'
+    - border-radius: '0'
+    - border: none
+    - box-shadow: none
+    - color: white
+    - display: >
+        [[[
+          // Dev: /<dash>/<view>?ringtest forces the overlay visible on any
+          // browser, alarm or not — for styling it without firing an alarm.
+          if (new URLSearchParams(location.search).has('ringtest')) return 'grid';
+
+          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+          const st = Object.values(hass.states).find(
+            s => s.entity_id.endsWith('_alarm_ringing')
+                 && s.attributes.room === room
+          );
+          if (!st || st.state !== 'on') return 'none';
+          // Scope to this room's device. Err toward SHOWING — only hide when we
+          // positively know this is a different browser (nav set, our id known
+          // and different). No nav_browser configured, or our id unknown -> show.
+          const nav = st.attributes.nav_browser;
+          const me = localStorage['browser_mod-browser-id'];
+          return (!nav || !me || nav === me) ? 'grid' : 'none';
+        ]]]
+  grid:
+    - grid-template-areas: >
+        "weather  weather"
+        "greeting greeting"
+        "clock    clock"
+        "snooze   stop"
+        "hint     hint"
+    - position: relative
+    - z-index: '1'
+    - grid-template-columns: auto auto
+    - grid-template-rows: repeat(5, min-content)
+    - justify-content: center
+    - align-content: center
+    - justify-items: center
+    - column-gap: 18px
+    - row-gap: 10px
+    - width: 100%
+    - height: 100%
+    - box-sizing: border-box
+    - padding: 5vh 6vw
+  custom_fields:
+    weather:
+      - margin-bottom: 40px
+    greeting:
+      - font-family: Georgia, 'Times New Roman', serif
+      - font-style: italic
+      - font-size: 30px
+      - white-space: nowrap
+    clock:
+      - font-family: Georgia, 'Times New Roman', serif
+      - font-style: italic
+      - font-size: 30px
+      - white-space: nowrap
+      - margin-bottom: 16px
+    hint:
+      - margin-top: 40px
+      - font-style: italic
+      - font-size: 14px
+      - opacity: '0.5'

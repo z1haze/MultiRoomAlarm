@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Public repo for the Multi-Room Alarm Clock integration.
+#
+# This git repo lives INSIDE a live Home Assistant config folder, which holds
+# hundreds of files that are NOT part of this project (secrets, the HA database,
+# .storage/ auth tokens, personal dashboards, unrelated integrations, media,
+# backups, …). So: deny everything, then explicitly re-include only the paths
+# that ship with the published integration.
+#
+# Pattern: `/*` ignores every entry at the repo root. `!/name` (or `!/name/`)
+# re-includes a path; once a directory is re-included, everything inside it is
+# tracked. Keep this deny-first structure — do NOT switch to tracking the whole
+# config folder.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Deny everything at the repo root by default.
+/*
+
+# ── Repo meta ───────────────────────────────────────────────────────────────
+!/.gitignore
+!/README.md
+!/LICENSE
+!/hacs.json
+!/.github/
+# screenshots referenced by the README
+!/docs/
+
+# ── The integration ────────────────────────────────────────────────────────
+!/custom_components/
+/custom_components/*
+!/custom_components/multi_room_alarm/
+
+# ── Lovelace cards that ship with the integration ──────────────────────────
+# The reusable alarm cards (row template, list, ringing overlay). Copy the
+# whole `dashboards/` folder into your HA config, or cherry-pick.
+# Only the shared `alarms/` partials + the generic example are tracked — any
+# other dashboard roots you keep in this folder stay untracked.
+!/dashboards/
+/dashboards/*
+!/dashboards/alarms/
+!/dashboards/example-room.yaml
+
+# Never track editor / OS cruft even inside re-included folders.
+**/.DS_Store
+**/__pycache__/
+**/*.pyc

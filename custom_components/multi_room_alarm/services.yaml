@@ -1,0 +1,150 @@
+add:
+  name: Add alarm
+  description: >-
+    Create a new alarm. Give `days` for a repeating alarm OR `date` for a
+    one-time alarm (which deletes itself after it fires).
+  fields:
+    time:
+      required: true
+      example: "07:00"
+      selector: { time: {} }
+    room:
+      required: true
+      example: bedroom
+      selector: { text: {} }
+    days:
+      example: "mon,tue,wed,thu,fri"
+      selector: { text: {} }
+    date:
+      example: "2026-09-01"
+      selector: { date: {} }
+    enabled:
+      default: true
+      selector: { boolean: {} }
+    sound:
+      example: "Wake Up Gently"
+      selector: { text: {} }
+    sound_type:
+      example: playlist
+      selector:
+        select:
+          options: [artist, album, track, playlist, radio]
+    volume:
+      example: 0.7
+      selector: { number: { min: 0, max: 1, step: 0.05, mode: slider } }
+
+update:
+  name: Update alarm
+  description: Edit an existing alarm by id. Only the fields you pass change.
+  fields:
+    id: { required: true, example: a1b2c3d4, selector: { text: {} } }
+    time: { selector: { time: {} } }
+    room: { selector: { text: {} } }
+    days: { selector: { text: {} } }
+    date: { selector: { date: {} } }
+    enabled: { selector: { boolean: {} } }
+    sound: { selector: { text: {} } }
+    sound_type:
+      selector:
+        select:
+          options: [artist, album, track, playlist, radio]
+    volume: { selector: { number: { min: 0, max: 1, step: 0.05, mode: slider } } }
+
+delete:
+  name: Delete alarm
+  fields:
+    id: { required: true, example: a1b2c3d4, selector: { text: {} } }
+
+set_enabled:
+  name: Enable / disable alarm
+  fields:
+    id: { required: true, example: a1b2c3d4, selector: { text: {} } }
+    enabled: { required: true, selector: { boolean: {} } }
+
+fire:
+  name: Fire alarm now (test)
+  fields:
+    room: { required: true, example: bedroom, selector: { text: {} } }
+    alarm_id: { example: test, selector: { text: {} } }
+    sound: { selector: { text: {} } }
+    sound_type:
+      selector:
+        select:
+          options: [artist, album, track, playlist, radio]
+    volume: { selector: { number: { min: 0, max: 1, step: 0.05, mode: slider } } }
+
+stop:
+  name: Stop alarm
+  fields:
+    room: { required: true, example: bedroom, selector: { text: {} } }
+
+snooze:
+  name: Snooze alarm
+  fields:
+    room: { required: true, example: bedroom, selector: { text: {} } }
+    snooze:
+      example: 9
+      selector: { number: { min: 1, max: 60, step: 1, mode: box } }
+
+set_config:
+  name: Set defaults
+  fields:
+    snooze_minutes:
+      selector: { number: { min: 1, max: 60, step: 1, mode: box } }
+    default_volume:
+      selector: { number: { min: 0, max: 1, step: 0.05, mode: slider } }
+    tone_url:
+      selector: { text: {} }
+
+room_set:
+  name: Add / update a room
+  description: >-
+    Create or replace a room record. A room needs at least one of
+    music_player / media_player.
+  fields:
+    room_id: { required: true, example: bedroom, selector: { text: {} } }
+    name: { example: "Bedroom", selector: { text: {} } }
+    area: { example: bedroom, selector: { area: {} } }
+    nav_browser:
+      description: >-
+        The browser_mod browser on this room's screen. Used to force the screen
+        to the room dashboard when an alarm fires. Optional.
+      selector:
+        device:
+          integration: browser_mod
+    music_player: { selector: { entity: { domain: media_player } } }
+    media_player: { selector: { entity: { domain: media_player } } }
+    device_volume:
+      description: >-
+        The number.* entity for the device's hardware stream volume.
+        Auto-detected from the media_player's device if left blank; only set
+        this to override.
+      selector: { entity: { domain: number } }
+    wake_screen_entity: { selector: { entity: { domain: [switch, button] } } }
+    sound: { selector: { text: {} } }
+    sound_type:
+      selector:
+        select:
+          options: [artist, album, track, playlist, radio]
+    alarm_volume: { selector: { number: { min: 0, max: 1, step: 0.05, mode: slider } } }
+    fire_scene: { selector: { entity: { domain: scene } } }
+    fire_on: { selector: { entity: { multiple: true } } }
+    fire_off: { selector: { entity: { multiple: true } } }
+
+room_get:
+  name: Get a room
+  description: >-
+    Returns a room's stored record plus its alarms (response data). The
+    `config` block round-trips straight back into `room_set` — fetch it, change
+    one field, pass it back.
+  fields:
+    room_id: { required: true, example: bedroom, selector: { text: {} } }
+
+room_delete:
+  name: Delete a room
+  fields:
+    room_id: { required: true, example: bedroom, selector: { text: {} } }
+
+list:
+  name: List rooms and alarms
+  description: Returns all rooms and alarms (response data).

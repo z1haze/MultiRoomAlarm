@@ -1,0 +1,283 @@
+# Multi-Room Alarm Clock — shared button-card templates.
+#
+# Wire in at every dashboard root that shows an alarms list:
+#
+#   button_card_templates: !include alarms/alarms_row_template.yaml
+#
+# Templates defined here:
+#   alarm_header  - the "< Alarms" header row. Back chevron navigates to
+#                   `variables.back` if the wrapper sets it, else the dashboard
+#                   home (URL with the last segment stripped).
+#   alarm_row     - one row of the alarms list (alarms_list_body.yaml).
+#                   variables.slot = 0-based index into this room's alarms,
+#                   sorted by time; empty slots render hidden. Room is derived
+#                   from the dashboard URL path (/<room>-dashboard/...).
+#   weather_chip  - little "icon 12°" weather widget. variables.color and
+#                   variables.size adapt it per context.
+
+alarm_header:
+  tap_action:
+    action: none
+  show_icon: false
+  show_name: true
+  name: Alarms
+  custom_fields:
+    back:
+      card:
+        type: custom:button-card
+        show_icon: true
+        show_name: false
+        # Default chevron; a wrapper can pass `variables.close_icon: mdi:close`.
+        icon: >
+          [[[ return variables.close_icon || 'mdi:chevron-left'; ]]]
+        # `action: navigate` only — `action: javascript` (history.back()) runs
+        # when button-card evaluates the config, not on tap, so it fired on
+        # mount. Default: strip the last URL segment -> the dashboard's home
+        # view. A wrapper can override with `variables.back`.
+        tap_action:
+          action: navigate
+          navigation_path: >
+            [[[
+              if (variables.back) return variables.back;
+              const p = location.pathname.replace(/\/+$/, '').split('/');
+              p.pop();
+              return p.join('/') || '/';
+            ]]]
+        styles:
+          card:
+            - background: none
+            - box-shadow: none
+            - border: none
+            - padding: 6px
+            - width: 46px
+            - height: 46px
+          icon:
+            - width: 30px
+  styles:
+    grid:
+      - grid-template-areas: '"back n"'
+      - grid-template-columns: min-content 1fr
+      - align-items: center
+      - column-gap: 2px
+    name:
+      - font-size: 22px
+      - font-weight: '600'
+      - justify-self: start
+  # Everything on ha-card goes through card_mod — button-card's `styles.card`
+  # can't emit `!important`, and stack-in-card forces nested cards transparent
+  # with `!important`. Pinned to the viewport top; the list body pads to clear
+  # it (bump padding-top there to match if you resize this).
+  card_mod:
+    style: |
+      ha-card {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 10 !important;
+        background: var(--primary-background-color, #0f0f0f) !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.09) !important;
+        padding: 6px 4px !important;
+      }
+
+alarm_row:
+  triggers_update: sensor.alarms
+  variables:
+    slot: 0
+  show_icon: false
+  show_name: true
+  show_label: true
+  tap_action:
+    action: call-service
+    service: multi_room_alarm.set_enabled
+    data:
+      id: >
+        [[[
+          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+          return list[variables.slot]?.id;
+        ]]]
+      enabled: >
+        [[[
+          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+          return !list[variables.slot]?.enabled;
+        ]]]
+  hold_action:
+    action: call-service
+    service: multi_room_alarm.delete
+    confirmation:
+      text: Delete this alarm?
+    data:
+      id: >
+        [[[
+          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+          return list[variables.slot]?.id;
+        ]]]
+  name: >
+    [[[
+      const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+      const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+      const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+      const a = list[variables.slot];
+      if (!a) return '';
+      let [h, m] = a.time.split(':').map(Number);
+      const ap = h < 12 ? 'AM' : 'PM';
+      h = h % 12 || 12;
+      return `${h}:${String(m).padStart(2, '0')} ${ap}${a.sound ? '  ♪' : ''}`;
+    ]]]
+  label: >
+    [[[
+      const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+      const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+      const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+      const a = list[variables.slot];
+      if (!a) return '';
+      let when;
+      if (a.date) {
+        const [y, mo, d] = a.date.split('-').map(Number);
+        when = new Date(y, mo - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      } else {
+        const order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        const nice = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+        const days = order.filter(dd => (a.days || []).includes(dd));
+        const key = days.join(',');
+        if (days.length === 7) when = 'Every day';
+        else if (key === 'mon,tue,wed,thu,fri') when = 'Weekdays';
+        else if (key === 'sat,sun') when = 'Weekends';
+        else if (days.length === 0) when = 'No days';
+        else when = days.map(dd => nice[dd]).join(' ');
+      }
+      return a.sound ? `${when} · ${a.sound}` : when;
+    ]]]
+  custom_fields:
+    toggle: >
+      [[[
+        const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+        const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+        const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+        const a = list[variables.slot];
+        if (!a) return '';
+        const on = !!a.enabled;
+        return `<div style="width:48px;height:28px;border-radius:14px;position:relative;flex:0 0 auto;
+          background:${on ? 'var(--primary-color, #2f95dc)' : 'rgba(255,255,255,0.16)'};
+          transition:background .2s;">
+          <div style="position:absolute;top:3px;left:${on ? '23px' : '3px'};width:22px;height:22px;
+            border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.45);"></div>
+        </div>`;
+      ]]]
+  styles:
+    card:
+      - background: none
+      - box-shadow: none
+      - border: none
+      - border-radius: '0'
+      - border-bottom: 1px solid rgba(255,255,255,0.09)
+      - padding: 24px 20px
+      - display: >
+          [[[
+            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+            const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+            const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+            return list[variables.slot] ? 'block' : 'none';
+          ]]]
+      - opacity: >
+          [[[
+            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+            const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+            const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+            return list[variables.slot]?.enabled ? '1' : '0.5';
+          ]]]
+    grid:
+      - grid-template-areas: '"n toggle" "l toggle"'
+      - grid-template-columns: 1fr auto
+      - grid-template-rows: auto auto
+      - align-items: center
+      - column-gap: 12px
+    name:
+      - font-size: 32px
+      - font-weight: '600'
+      - justify-self: start
+      - line-height: '1.15'
+    label:
+      - justify-self: start
+      - text-align: left
+      - opacity: '0.6'
+      - font-size: 16px
+      - margin-top: 3px
+    custom_fields:
+      toggle:
+        - justify-self: end
+        - align-self: center
+
+
+# Little "icon 12°" weather widget shown on the ringing overlay.
+# Auto-detects a weather entity — prefers `weather.forecast_home` (HA's default
+# Met.no name), else the first `weather.*` it finds. Hides itself if there is
+# none, so no config is required.
+weather_chip:
+  show_icon: true
+  show_name: false
+  show_label: true
+  variables:
+    color: rgb(28, 28, 28)
+    size: 32
+  icon: >
+    [[[
+      const cfg = states['sensor.alarms']?.attributes?.weather_entity;
+      const w = (cfg && states[cfg])
+        || states['weather.forecast_home']
+        || Object.values(states).find(s => s.entity_id.startsWith('weather.'));
+      const m = {
+        'sunny': 'mdi:weather-sunny', 'clear-night': 'mdi:weather-night',
+        'partlycloudy': 'mdi:weather-partly-cloudy', 'cloudy': 'mdi:weather-cloudy',
+        'rainy': 'mdi:weather-rainy', 'pouring': 'mdi:weather-pouring',
+        'lightning': 'mdi:weather-lightning', 'lightning-rainy': 'mdi:weather-lightning-rainy',
+        'snowy': 'mdi:weather-snowy', 'snowy-rainy': 'mdi:weather-snowy-rainy',
+        'fog': 'mdi:weather-fog', 'windy': 'mdi:weather-windy'
+      };
+      return m[w && w.state] || 'mdi:weather-partly-cloudy';
+    ]]]
+  label: >
+    [[[
+      const cfg = states['sensor.alarms']?.attributes?.weather_entity;
+      const w = (cfg && states[cfg])
+        || states['weather.forecast_home']
+        || Object.values(states).find(s => s.entity_id.startsWith('weather.'));
+      const t = w && w.attributes && w.attributes.temperature;
+      return (t != null ? t : '--') + '°';
+    ]]]
+  styles:
+    card:
+      - background: none
+      - box-shadow: none
+      - border: none
+      - padding: 0
+      - display: >
+          [[[
+            const cfg = states['sensor.alarms']?.attributes?.weather_entity;
+            return ((cfg && states[cfg])
+              || states['weather.forecast_home']
+              || Object.values(states).find(s => s.entity_id.startsWith('weather.')))
+              ? 'grid' : 'none';
+          ]]]
+    grid:
+      - grid-template-areas: '"i l"'
+      - grid-template-columns: min-content min-content
+      - align-items: center
+      - column-gap: 8px
+    icon:
+      - color: '[[[ return variables.color; ]]]'
+      - width: '[[[ return variables.size + "px"; ]]]'
+      - height: '[[[ return variables.size + "px"; ]]]'
+      - '--mdc-icon-size': '[[[ return variables.size + "px"; ]]]'
+    label:
+      - color: '[[[ return variables.color; ]]]'
+      - font-size: '[[[ return (variables.size - 4) + "px"; ]]]'
+      - font-weight: '600'
