@@ -6,8 +6,7 @@ import datetime as dt
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -16,11 +15,10 @@ from .const import (
     CONF_WEATHER_ENTITY,
     DATA_ENGINE,
     DOMAIN,
-    SIGNAL_STATE_CHANGED,
     WEEKDAYS,
 )
 from .coordinator import AlarmClockEngine, schedule_phrase
-from .entity import AlarmRoomEntity
+from .entity import AlarmBaseEntity, AlarmRoomEntity
 
 
 async def async_setup_entry(
@@ -86,34 +84,22 @@ class NextAlarmSensor(AlarmRoomEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         _when, alarm = self._compute()
         return {
+            # The dashboard cards match on `room` plus the `_next_alarm` suffix.
+            "room": self._room_id,
             "alarm_id": alarm.get("id") if alarm else None,
             "schedule": schedule_phrase(alarm) if alarm else None,
         }
 
 
-class AlarmsListSensor(SensorEntity):
+class AlarmsListSensor(AlarmBaseEntity, SensorEntity):
     """Integration-wide: alarm count with the full list as an attribute.
 
     Useful for a dashboard that renders capped alarm slots.
     """
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
     _attr_translation_key = "alarms"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_unique_id = f"{DOMAIN}_alarms"
-
-    def __init__(self, engine: AlarmClockEngine) -> None:
-        self._engine = engine
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            async_dispatcher_connect(self.hass, SIGNAL_STATE_CHANGED, self._updated)
-        )
-
-    @callback
-    def _updated(self, *args) -> None:
-        self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:

@@ -1,8 +1,10 @@
 """Service registration for the Multi-Room Alarm Clock.
 
-All services are thin wrappers over `AlarmClockEngine`. Alarm services return a
-response dict ({"ok": bool, ...}); room services reload the config entry so the
-platforms rebuild that room's entities.
+All services are thin wrappers over `AlarmClockEngine`, except `set_config`,
+which writes the config entry's options. `add` / `update` answer
+with {"ok": bool, ...}, `room_get` / `list` with response data, the rest with
+nothing; room services reload the config entry so the platforms rebuild that
+room's entities.
 """
 from __future__ import annotations
 
@@ -14,16 +16,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
-from .const import CONF_DEFAULT_VOLUME, CONF_SNOOZE_MINUTES, CONF_TONE_URL, DATA_ENGINE, DOMAIN
+from .const import (
+    CONF_DEFAULT_VOLUME,
+    CONF_SNOOZE_MINUTES,
+    CONF_TONE_URL,
+    DATA_ENGINE,
+    DOMAIN,
+    ROOM_KEYS,
+    SNOOZE_MAX,
+    SNOOZE_MIN,
+)
 from .coordinator import AlarmClockEngine, ValidationError
 
 _LOGGER = logging.getLogger(__name__)
-
-SERVICES: tuple[str, ...] = (
-    "add", "update", "delete", "set_enabled",
-    "fire", "stop", "snooze",
-    "set_config", "room_set", "room_get", "room_delete", "list",
-)
 
 _VOL = vol.Coerce(float)
 
@@ -64,9 +69,13 @@ SCHEMA_ROOM = vol.Schema({vol.Required("room"): cv.string})
 SCHEMA_SNOOZE = vol.Schema({vol.Required("room"): cv.string, vol.Optional("snooze"): vol.Coerce(int)})
 SCHEMA_SET_CONFIG = vol.Schema(
     {
-        vol.Optional("snooze_minutes"): vol.Coerce(int),
-        vol.Optional("default_volume"): _VOL,
-        vol.Optional("tone_url"): cv.string,
+        # Keys are the options-form keys: set_config writes the entry's options.
+        # Same bounds as the options form, which re-validates these as defaults.
+        vol.Optional(CONF_SNOOZE_MINUTES): vol.All(
+            vol.Coerce(int), vol.Range(min=SNOOZE_MIN, max=SNOOZE_MAX)
+        ),
+        vol.Optional(CONF_DEFAULT_VOLUME): vol.All(_VOL, vol.Range(min=0, max=1)),
+        vol.Optional(CONF_TONE_URL): cv.string,
     }
 )
 SCHEMA_ROOM_SET = vol.Schema(
@@ -89,6 +98,10 @@ SCHEMA_ROOM_SET = vol.Schema(
 )
 SCHEMA_ROOM_DELETE = vol.Schema({vol.Required("room_id"): cv.string})
 SCHEMA_ROOM_GET = SCHEMA_ROOM_DELETE  # both take just {room_id}
+
+# The schema offers exactly the keys the engine stores (const.ROOM_KEYS) — a
+# key added to one side but not the other fails at import, not in the field.
+assert {str(k) for k in SCHEMA_ROOM_SET.schema} == {"room_id", *ROOM_KEYS}
 
 
 def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -161,12 +174,11 @@ def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     # --- config + rooms ------------------------------------------------- #
     async def set_config(call: ServiceCall) -> None:
-        await engine.async_set_config(
-            **{
-                CONF_SNOOZE_MINUTES: call.data.get("snooze_minutes"),
-                CONF_DEFAULT_VOLUME: call.data.get("default_volume"),
-                CONF_TONE_URL: call.data.get("tone_url"),
-            }
+        # Saved into the entry's options — the store the options form writes and
+        # every setup pushes to the engine — so a later reload can't revert it.
+        # The update listener reloads the entry, which hands it to the engine.
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, **call.data}
         )
 
     async def room_set(call: ServiceCall) -> None:
@@ -204,23 +216,28 @@ def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def list_(call: ServiceCall) -> ServiceResponse:
         return {"rooms": engine.rooms, "alarms": engine.alarms}
 
-    register = hass.services.async_register
-    OPTIONAL, ONLY = SupportsResponse.OPTIONAL, SupportsResponse.ONLY
-
-    register(DOMAIN, "add", add, schema=SCHEMA_ADD, supports_response=OPTIONAL)
-    register(DOMAIN, "update", update, schema=SCHEMA_UPDATE, supports_response=OPTIONAL)
-    register(DOMAIN, "delete", delete, schema=SCHEMA_ID)
-    register(DOMAIN, "set_enabled", set_enabled, schema=SCHEMA_SET_ENABLED)
-    register(DOMAIN, "fire", fire, schema=SCHEMA_FIRE)
-    register(DOMAIN, "stop", stop, schema=SCHEMA_ROOM)
-    register(DOMAIN, "snooze", snooze, schema=SCHEMA_SNOOZE)
-    register(DOMAIN, "set_config", set_config, schema=SCHEMA_SET_CONFIG)
-    register(DOMAIN, "room_set", room_set, schema=SCHEMA_ROOM_SET)
-    register(DOMAIN, "room_get", room_get, schema=SCHEMA_ROOM_GET, supports_response=ONLY)
-    register(DOMAIN, "room_delete", room_delete, schema=SCHEMA_ROOM_DELETE)
-    register(DOMAIN, "list", list_, supports_response=ONLY)
+    NONE, OPTIONAL, ONLY = SupportsResponse.NONE, SupportsResponse.OPTIONAL, SupportsResponse.ONLY
+    table = (
+        ("add", add, SCHEMA_ADD, OPTIONAL),
+        ("update", update, SCHEMA_UPDATE, OPTIONAL),
+        ("delete", delete, SCHEMA_ID, NONE),
+        ("set_enabled", set_enabled, SCHEMA_SET_ENABLED, NONE),
+        ("fire", fire, SCHEMA_FIRE, NONE),
+        ("stop", stop, SCHEMA_ROOM, NONE),
+        ("snooze", snooze, SCHEMA_SNOOZE, NONE),
+        ("set_config", set_config, SCHEMA_SET_CONFIG, NONE),
+        ("room_set", room_set, SCHEMA_ROOM_SET, NONE),
+        ("room_get", room_get, SCHEMA_ROOM_GET, ONLY),
+        ("room_delete", room_delete, SCHEMA_ROOM_DELETE, NONE),
+        ("list", list_, None, ONLY),
+    )
+    for name, handler, schema, response in table:
+        hass.services.async_register(
+            DOMAIN, name, handler, schema=schema, supports_response=response
+        )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
-    for service in SERVICES:
+    """Remove whatever this domain registered — no second list to keep in step."""
+    for service in list(hass.services.async_services_for_domain(DOMAIN)):
         hass.services.async_remove(DOMAIN, service)

@@ -14,9 +14,10 @@ Data model — one Store (`.storage/multi_room_alarm`) holding four keys:
                enabled  bool
                days     ["mon", ...]      recurring   } exactly
                date     "YYYY-MM-DD"      one-shot    } one of these
-               sound / sound_type / volume           optional overrides
-    rooms    {room_id: {name, area, players, ...}} — see ROOM_KEYS
-    config   {snooze_minutes, default_volume, tone_url}
+               sound (+ its sound_type) / volume     optional overrides
+    rooms    {room_id: {name, area, music_player, ...}} — keys in const.ROOM_KEYS
+    config   {snooze_minutes, default_volume, tone_url,
+              weather_entity, clock_entity}       the last two feed the dashboard
     snoozes  {room_id: {until, alarm_id, sound, ...}} — pending snoozes,
              persisted so they survive a restart
 
@@ -50,19 +51,22 @@ from .const import (
     CONF_DEFAULT_VOLUME,
     CONF_SNOOZE_MINUTES,
     CONF_TONE_URL,
+    DATA_ENGINE,
     DAY_NAMES,
     DEFAULT_ALARM_VOLUME,
     DEFAULT_SNOOZE_MINUTES,
     DOMAIN,
     FEATURE_REPEAT_SET,
     MONTHS_LONG,
-    MONTHS_SHORT,
     PLAY_CALL_TIMEOUT,
     PLAY_SETTLE_SECONDS,
     RING_MAX_MINUTES,
     RING_REASSERT_SECONDS,
     RING_REPLAY_MIN_GAP,
     RING_SOUND_SECONDS,
+    ROOM_LIST_KEYS,
+    ROOM_STR_KEYS,
+    ROOM_VOLUME_KEY,
     SIGNAL_STATE_CHANGED,
     SNOOZE_MAX,
     SNOOZE_MIN,
@@ -73,6 +77,8 @@ from .const import (
     TONE_FILENAME,
     VALID_SOUND_TYPES,
     WEEKDAYS,
+    dashboard_path,
+    room_signal,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,11 +126,6 @@ def _hhmm_from_iso(iso: str | None) -> str | None:
         return None
 
 
-def _room_signal(room_id: str) -> str:
-    """Dispatcher signal a single room's entities listen on."""
-    return f"{SIGNAL_STATE_CHANGED}_{room_id}"
-
-
 def schedule_phrase(alarm: dict[str, Any]) -> str:
     """The "when" of an alarm as a phrase — "every day", "on weekdays",
     "on Mondays", "on August 31". Empty string if it has no schedule.
@@ -145,6 +146,18 @@ def schedule_phrase(alarm: dict[str, Any]) -> str:
     if len(names) == 1:
         return f"on {names[0]}s"
     return "on " + ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
+def clock_phrase(alarm: dict[str, Any]) -> str:
+    """An alarm's time as speech — "7:30 a.m.". Used by every voice reply."""
+    hh, mm = alarm["time"].split(":")
+    hh = int(hh)
+    return f"{hh % 12 or 12}:{mm} {'a.m.' if hh < 12 else 'p.m.'}"
+
+
+def get_engine(hass: HomeAssistant) -> AlarmClockEngine | None:
+    """The engine, or None before/after the config entry is loaded."""
+    return (hass.data.get(DOMAIN) or {}).get(DATA_ENGINE)
 
 
 class AlarmClockEngine:
@@ -217,7 +230,7 @@ class AlarmClockEngine:
         await self._store.async_save(self._data)
 
     # ===================================================================== #
-    # Config  (snooze length · default volume · tone-URL override)           #
+    # Config  (snooze · default volume · tone URL · dashboard weather/clock) #
     # ===================================================================== #
     @property
     def config(self) -> dict[str, Any]:
@@ -274,25 +287,20 @@ class AlarmClockEngine:
         clean: dict[str, Any] = {}
 
         # Plain string fields.
-        for key in (
-            "name", "area", "nav_browser", "music_player", "media_player",
-            "device_volume", "wake_screen_entity", "sound", "sound_type", "fire_scene",
-        ):
+        for key in ROOM_STR_KEYS:
             val = record.get(key)
             if isinstance(val, str) and val.strip():
                 clean[key] = val.strip()
 
-        # Entity-list fields (accept a list or a comma/space separated string).
-        for key in ("fire_on", "fire_off"):
+        # Entity-list fields (the service schema has already made these lists).
+        for key in ROOM_LIST_KEYS:
             val = record.get(key)
-            if isinstance(val, str):
-                val = [x for x in val.replace(",", " ").split() if x]
             if isinstance(val, list) and val:
                 clean[key] = val
 
-        vol = normalize_volume(record.get("alarm_volume"))
+        vol = normalize_volume(record.get(ROOM_VOLUME_KEY))
         if vol is not None:
-            clean["alarm_volume"] = vol
+            clean[ROOM_VOLUME_KEY] = vol
 
         if not clean.get("music_player") and not clean.get("media_player"):
             raise ValidationError("a room needs music_player and/or media_player")
@@ -599,14 +607,14 @@ class AlarmClockEngine:
     @callback
     def _publish_room(self, room_id: str) -> None:
         """Tell one room's entities (and the global alarms sensor) to refresh."""
-        async_dispatcher_send(self.hass, _room_signal(room_id), room_id)
+        async_dispatcher_send(self.hass, room_signal(room_id), room_id)
         async_dispatcher_send(self.hass, SIGNAL_STATE_CHANGED)
 
     @callback
     def _publish_all(self) -> None:
         async_dispatcher_send(self.hass, SIGNAL_STATE_CHANGED)
         for room_id in self.room_ids():
-            async_dispatcher_send(self.hass, _room_signal(room_id), room_id)
+            async_dispatcher_send(self.hass, room_signal(room_id), room_id)
 
     # ===================================================================== #
     # Voice helpers — "which room?" and "is the mic open?"                   #
@@ -671,17 +679,8 @@ class AlarmClockEngine:
         sound_type: str | None = None,
         volume: Any = None,
     ) -> None:
-        """Public entry point (the `fire` service, snooze re-fire, scheduler)."""
-        await self._fire(room_id, alarm_id, sound, sound_type, volume)
-
-    async def _fire(
-        self,
-        room_id: str,
-        alarm_id: str = "manual",
-        sound: str | None = None,
-        sound_type: str | None = None,
-        volume: Any = None,
-    ) -> None:
+        """Start ringing `room_id`. Called by the `fire` service, the
+        scheduler and a snooze that comes due."""
         room = self.room(room_id)
         if not room:
             _LOGGER.error("Fire requested for unknown room '%s'", room_id)
@@ -715,7 +714,7 @@ class AlarmClockEngine:
             with contextlib.suppress(Exception):
                 await self._call(
                     "browser_mod", "navigate",
-                    browser_id=nav, path=f"/{room_id}-dashboard/home",
+                    browser_id=nav, path=dashboard_path(room_id, "home"),
                 )
 
         # Give a just-woken device a moment before we touch its media player.
@@ -723,8 +722,10 @@ class AlarmClockEngine:
 
         # Sound runs as a background task so the lights below don't delay it.
         # Stash the *resolved* params so a later snooze re-fires exactly this.
+        # sound_type belongs to whichever sound is used: an alarm's own song
+        # never inherits the room's type (a "playlist" room would misplay it).
         ring_sound = sound or room.get("sound")
-        ring_type = sound_type or room.get("sound_type")
+        ring_type = sound_type if sound else room.get("sound_type")
         ring_volume = volume if volume is not None else room.get("alarm_volume")
         self._ring_params[room_id] = {
             "alarm_id": alarm_id,
@@ -809,59 +810,56 @@ class AlarmClockEngine:
         grace_pending = not (using_tone or active is None)  # waiting to confirm a custom song started
         loops = active is not None and self._supports_repeat(active)
 
-        try:
-            while room_id in self._ringing:
-                await asyncio.sleep(SOUND_GRACE_SECONDS if grace_pending else RING_REASSERT_SECONDS)
-                elapsed += SOUND_GRACE_SECONDS if grace_pending else RING_REASSERT_SECONDS
+        while room_id in self._ringing:
+            await asyncio.sleep(SOUND_GRACE_SECONDS if grace_pending else RING_REASSERT_SECONDS)
+            elapsed += SOUND_GRACE_SECONDS if grace_pending else RING_REASSERT_SECONDS
 
-                if elapsed >= RING_MAX_MINUTES * 60:
+            if elapsed >= RING_MAX_MINUTES * 60:
+                _LOGGER.warning(
+                    "Ring for '%s' hit the %dm cap — auto-stopping", room_id, RING_MAX_MINUTES
+                )
+                self.hass.async_create_task(self._stop(room_id))
+                return
+
+            # Mic is open in this room — go quiet, touch nothing.
+            if self.is_area_listening(area):
+                continue
+
+            for e in volume_entities:
+                frac = self._vol_fraction(e)
+                if frac is not None and frac < target_vol - 0.05:
+                    await self._vol_force(e, target_vol)
+
+            state = self._state(active) if active else None
+
+            # One-time: confirm the custom song actually started.
+            if grace_pending:
+                grace_pending = False
+                if state != "playing":
                     _LOGGER.warning(
-                        "Ring for '%s' hit the %dm cap — auto-stopping", room_id, RING_MAX_MINUTES
+                        "Custom sound for '%s' didn't start — using the tone", room_id
                     )
-                    self.hass.async_create_task(self._stop(room_id))
-                    return
-
-                # Mic is open in this room — go quiet, touch nothing.
-                if self.is_area_listening(area):
-                    continue
-
-                for e in volume_entities:
-                    frac = self._vol_fraction(e)
-                    if frac is not None and frac < target_vol - 0.05:
-                        await self._vol_force(e, target_vol)
-
-                state = self._state(active) if active else None
-
-                # One-time: confirm the custom song actually started.
-                if grace_pending:
-                    grace_pending = False
-                    if state != "playing":
-                        _LOGGER.warning(
-                            "Custom sound for '%s' didn't start — using the tone", room_id
-                        )
-                        using_tone = True
-                        active = await self._play_tone(device_player, ma_player) or active
-                        await self._set_repeat(active, "one")
-                        loops = active is not None and self._supports_repeat(active)
-                        last_play = elapsed
-                    continue
-
-                # Re-kick playback only when genuinely needed, rate-limited.
-                # For the tone (known length, may not loop) replay just before
-                # it ends; for a custom song rely on the player going idle.
-                if elapsed - last_play < RING_REPLAY_MIN_GAP:
-                    continue
-                tone_ended = using_tone and not loops and (elapsed - last_play) >= (RING_SOUND_SECONDS - 2)
-                if tone_ended or not state or state in _DEAD_STATES:
-                    if using_tone or not sound:
-                        active = await self._play_tone(device_player, ma_player) or active
-                    else:
-                        active = await self._play_custom(ma_player, sound, sound_type) or active
+                    using_tone = True
+                    active = await self._play_tone(device_player, ma_player) or active
                     await self._set_repeat(active, "one")
                     loops = active is not None and self._supports_repeat(active)
                     last_play = elapsed
-        except asyncio.CancelledError:
-            raise
+                continue
+
+            # Re-kick playback only when genuinely needed, rate-limited.
+            # For the tone (known length, may not loop) replay just before
+            # it ends; for a custom song rely on the player going idle.
+            if elapsed - last_play < RING_REPLAY_MIN_GAP:
+                continue
+            tone_ended = using_tone and not loops and (elapsed - last_play) >= (RING_SOUND_SECONDS - 2)
+            if tone_ended or not state or state in _DEAD_STATES:
+                if using_tone or not sound:
+                    active = await self._play_tone(device_player, ma_player) or active
+                else:
+                    active = await self._play_custom(ma_player, sound, sound_type) or active
+                await self._set_repeat(active, "one")
+                loops = active is not None and self._supports_repeat(active)
+                last_play = elapsed
 
     async def _stop_ring(self, room_id: str, players: Iterable[str]) -> None:
         """Cancel the ring loop task and stop each player. `media_stop` is
@@ -881,8 +879,20 @@ class AlarmClockEngine:
             await self._set_repeat(player, "off")
 
     async def async_stop(self, room_id: str) -> None:
-        """Public: the `stop` service / voice / overlay button."""
+        """Public: the `stop` service / overlay button."""
         await self._stop(room_id)
+
+    def is_active(self, room_id: str) -> bool:
+        """True while the room is ringing or has a pending snooze."""
+        return room_id in self._ringing or room_id in self._snoozed_pub
+
+    async def async_stop_if_active(self, room_id: str) -> bool:
+        """The voice paths' stop: False (and nothing touched) if the room is
+        neither ringing nor snoozed."""
+        if not self.is_active(room_id):
+            return False
+        await self._stop(room_id)
+        return True
 
     async def _stop(self, room_id: str) -> None:
         await self._teardown(room_id)
@@ -904,7 +914,7 @@ class AlarmClockEngine:
         """Silence now, re-fire after N minutes (the minute tick handles the
         re-fire). Returns {until, wake_time} or None if nothing was ringing."""
         if room_id not in self._ringing:
-            _LOGGER.warning("Snooze for '%s' but nothing is ringing", room_id)
+            _LOGGER.debug("Snooze for '%s' but nothing is ringing", room_id)
             return None
 
         try:
@@ -1169,7 +1179,7 @@ class AlarmClockEngine:
             self._snoozed_pub.pop(room_id, None)
             self._publish_room(room_id)
             _LOGGER.info("Snooze for '%s' is up — re-firing", room_id)
-            await self._fire(
+            await self.async_fire(
                 room_id, snz.get("alarm_id", "snooze"),
                 snz.get("sound"), snz.get("sound_type"), snz.get("volume"),
             )
@@ -1199,7 +1209,7 @@ class AlarmClockEngine:
             if self._last_fired.get(aid) == stamp:  # already fired this minute
                 continue
             self._last_fired[aid] = stamp
-            await self._fire(
+            await self.async_fire(
                 alarm.get("room"), aid,
                 alarm.get("sound"), alarm.get("sound_type"), alarm.get("volume"),
             )
@@ -1216,24 +1226,8 @@ class AlarmClockEngine:
     # ===================================================================== #
     # Speech formatting (voice confirmations)                               #
     # ===================================================================== #
-    def alarm_summary(self, alarm: dict[str, Any]) -> str:
-        """"7:30 a.m. on weekdays" — used in voice/service confirmations."""
-        hh, mm = alarm["time"].split(":")
-        hh = int(hh)
-        ap = "a.m." if hh < 12 else "p.m."
-        clock = f"{hh % 12 or 12}:{mm} {ap}"
-
-        if alarm.get("date"):
-            _y, mo, d = alarm["date"].split("-")
-            return f"{clock} on {MONTHS_SHORT[int(mo) - 1]} {int(d)}"
-
-        days = alarm.get("days", [])
-        if len(days) == 7:
-            when = "every day"
-        elif days == ["mon", "tue", "wed", "thu", "fri"]:
-            when = "on weekdays"
-        elif days == ["sat", "sun"]:
-            when = "on weekends"
-        else:
-            when = "on " + ", ".join(d.capitalize() for d in days)
-        return f"{clock} {when}"
+    @staticmethod
+    def alarm_summary(alarm: dict[str, Any]) -> str:
+        """"7:30 a.m. on weekdays" — the add/update confirmation (service
+        response + alarm_set tool). Same words the list paths speak."""
+        return f"{clock_phrase(alarm)} {schedule_phrase(alarm)}".strip()

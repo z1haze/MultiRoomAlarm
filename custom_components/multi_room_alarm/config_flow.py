@@ -20,8 +20,11 @@ from .const import (
     CONF_SNOOZE_MINUTES,
     CONF_TONE_URL,
     CONF_WEATHER_ENTITY,
+    DEFAULT_ALARM_VOLUME,
     DEFAULT_SNOOZE_MINUTES,
     DOMAIN,
+    SNOOZE_MAX,
+    SNOOZE_MIN,
 )
 
 
@@ -65,11 +68,13 @@ class MultiRoomAlarmOptionsFlow(OptionsFlow):
                     CONF_SNOOZE_MINUTES,
                     default=opts.get(CONF_SNOOZE_MINUTES, DEFAULT_SNOOZE_MINUTES),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=60, step=1, mode="box")
+                    selector.NumberSelectorConfig(
+                        min=SNOOZE_MIN, max=SNOOZE_MAX, step=1, mode="box"
+                    )
                 ),
                 vol.Optional(
                     CONF_DEFAULT_VOLUME,
-                    default=opts.get(CONF_DEFAULT_VOLUME, 0.8),
+                    default=opts.get(CONF_DEFAULT_VOLUME, DEFAULT_ALARM_VOLUME),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=1, step=0.05, mode="slider")
                 ),

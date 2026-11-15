@@ -26,6 +26,6 @@ jobs:
           # The icon ships in custom_components/multi_room_alarm/brand/ and HA
           # 2026.3+ serves it locally. The HACS action's `brands` check still
           # wants the domain in home-assistant/brands (for older HA / the HACS
-          # store listing) — submit it there to drop this ignore. See
-          # docs/brand/README.md.
+          # store listing) — submit it there to drop this ignore. The source
+          # artwork is docs/brand/icon.svg.
           ignore: brands

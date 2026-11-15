@@ -63,7 +63,8 @@ tapping.
   `alarm_snooze`) plus sentence-matched `stop` / `snooze` / `show my alarms`.
   The room is resolved from the calling device — never asked.
 - **Mic-aware ring loop** — while a satellite in the ringing room is listening,
-  the ring goes silent so the mic can hear "stop", then resumes.
+  the ring loop stops re-asserting volume and playback, so the satellite's own
+  ducking can quiet it and the mic can hear "stop"; it resumes afterwards.
 - **Dashboard cards** — an Alexa-style full-screen ringing overlay, an alarm
   list with tap-to-toggle / hold-to-delete, and a next-alarm chip. All driven by
   the integration's entities; no per-room copies.
@@ -74,14 +75,14 @@ tapping.
 
 | | |
 |---|---|
-| Home Assistant | 2024.8 or newer |
+| Home Assistant | 2024.12 or newer |
 | An `assist_satellite` per room | Echo Show ([VACA]), Voice PE, Wyoming, HA Voice… |
 | A conversation agent with LLM support | for the voice API (any — local or cloud) |
 | [Music Assistant] | optional, for custom wake songs (falls back to a tone) |
 | [browser_mod] | optional, to force a room's screen to its dashboard on fire |
 
 Dashboard cards additionally need these HACS frontend plugins: **card-mod**,
-**button-card**, **mushroom**, **stack-in-card**, **layout-card**.
+**button-card**, **stack-in-card**, **layout-card**.
 
 ---
 
@@ -149,8 +150,8 @@ action* (or `action:` in a script). Minimum to get a working alarm:
    ```
 
 That's it — the alarm now fires on schedule. Add a dashboard (below) for the
-ringing screen and a list, or drive it entirely by voice. Every field of every
-action is described in the Actions panel itself and in the sections below.
+ringing screen and a list, or drive it entirely by voice. Every action and
+its fields are described in the sections below.
 
 ---
 
@@ -246,8 +247,9 @@ Each room gets its own YAML dashboard whose **url_path is `<room_id>-dashboard`*
 
 `example-room.yaml` wires all of it together minimally. Build your own room
 dashboards from there — the `alarms/` partials are room-agnostic and reused
-as-is across every room. No entity names are hard-coded: the room is read from
-the URL, the ringing / next-alarm state from the integration's own sensors, and
+as-is across every room. The one fixed entity id is the integration's own
+`sensor.alarms` (don't rename it); everything else is looked up: the room is read
+from the URL, the ringing / next-alarm state from the integration's own sensors, and
 the ringing screen's weather chip + clock come from the **Weather entity** /
 **Clock entity** options (blank = auto-detect weather, browser clock).
 
@@ -273,8 +275,9 @@ Global:
 |---|---|
 | `sensor.alarms` | count of alarms; full list in the `alarms` attribute (used by the dashboard's capped slots). |
 
-The dashboard cards match on the **`room` attribute**, not the entity id — so
-however HA names the entities is fine.
+The dashboard cards find the per-room entities by the **`room` attribute** plus
+the default id suffix (`_alarm_ringing`, `_next_alarm`) — rename the prefix
+freely, but keep the suffix. `sensor.alarms` is read by that exact id.
 
 ---
 
@@ -286,14 +289,14 @@ however HA names the entities is fine.
 | `multi_room_alarm.update` | edit an alarm by `id`; only the fields you pass change. |
 | `multi_room_alarm.delete` | delete an alarm by `id`. |
 | `multi_room_alarm.set_enabled` | enable/disable an alarm by `id`. |
-| `multi_room_alarm.fire` | fire an alarm now, for testing (`room`, …). |
+| `multi_room_alarm.fire` | fire an alarm now, for testing (`room`; optional `alarm_id`, and `sound` (+ its `sound_type`) / `volume` to override the room's). |
 | `multi_room_alarm.stop` | stop the ringing/snoozed alarm in `room`. |
 | `multi_room_alarm.snooze` | snooze the ringing alarm in `room` (`snooze:` minutes). |
 | `multi_room_alarm.room_set` | create/replace a room record. |
 | `multi_room_alarm.room_get` | read a room record + its alarms (response data). |
 | `multi_room_alarm.room_delete` | delete a room and its alarms. |
 | `multi_room_alarm.list` | all rooms + all alarms (response data). |
-| `multi_room_alarm.set_config` | defaults: `snooze_minutes`, `default_volume`, `tone_url`. |
+| `multi_room_alarm.set_config` | defaults: `snooze_minutes`, `default_volume`, `tone_url`. Saved as the integration's options (same as **Configure**); reloads the integration. |
 
 **Options** (Settings → Devices & Services → Multi-Room Alarm Clock → Configure):
 
@@ -315,9 +318,10 @@ resolved from the device the request came from.
 
 **Sentence intents** (matched before the LLM, so they're instant and free):
 
-- *"stop the alarm"* / *"turn it off"* / *"I'm up"* → stop
+- *"stop the alarm"* / *"turn off the alarm"* / *"I'm up"* → stop
 - *"snooze"* / *"snooze for 10 minutes"* / *"five more minutes"* → snooze
-- *"what are my alarms"* / *"show my alarms"* → read them back
+- *"what are my alarms"* / *"show my alarms"* → open the room's alarms page on
+  its screen (rooms with `nav_browser`), otherwise read them back
 
 ---
 
@@ -327,7 +331,7 @@ resolved from the device the request came from.
 (`.storage/multi_room_alarm`: `config`, `rooms`, `alarms`, `snoozes`), a
 minute-tick scheduler, and the fire / ring / snooze / stop logic. Everything
 else (`services.py`, `llm_api.py`, `intent.py`, the sensors) is a thin wrapper
-over it. There is no polling and no cloud — `iot_class: local_push`.
+over it — except `set_config`, which writes the integration's options. There is no polling and no cloud — `iot_class: local_push`.
 
 Data model:
 
@@ -370,7 +374,7 @@ past-dated ones are swept on the minute tick and at startup.
 
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
-[ha-badge]: https://img.shields.io/badge/Home%20Assistant-2024.8%2B-blue.svg
+[ha-badge]: https://img.shields.io/badge/Home%20Assistant-2024.12%2B-blue.svg
 [VACA]: https://dinki.github.io/View-Assist/
 [Music Assistant]: https://www.music-assistant.io
 [browser_mod]: https://github.com/thomasloven/hass-browser_mod

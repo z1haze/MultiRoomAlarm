@@ -13,15 +13,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
-from .const import DATA_ENGINE, DOMAIN, LLM_API_ID, LLM_API_NAME
-from .coordinator import AlarmClockEngine, ValidationError, schedule_phrase
+from .const import DOMAIN, LLM_API_ID, LLM_API_NAME
+from .coordinator import AlarmClockEngine, ValidationError, get_engine, schedule_phrase
 
 _LOGGER = logging.getLogger(__name__)
 _UNREG_KEY = f"{DOMAIN}_llm_unregister"
-
-
-def _engine(hass: HomeAssistant) -> AlarmClockEngine:
-    return hass.data[DOMAIN][DATA_ENGINE]
 
 
 def async_register_llm_api(hass: HomeAssistant) -> None:
@@ -43,10 +39,15 @@ def async_unregister_llm_api(hass: HomeAssistant) -> None:
 
 
 class _RoomTool(llm.Tool):
-    """Base: resolves the room from the calling device."""
+    """Base: resolves the engine and the calling device's room."""
 
-    def _room(self, hass: HomeAssistant, llm_context: llm.LLMContext) -> str | None:
-        return _engine(hass).resolve_room_for_device(llm_context.device_id)
+    @staticmethod
+    def _resolve(
+        hass: HomeAssistant, llm_context: llm.LLMContext
+    ) -> tuple[AlarmClockEngine | None, str | None]:
+        engine = get_engine(hass)
+        room = engine.resolve_room_for_device(llm_context.device_id) if engine else None
+        return engine, room
 
 
 class AlarmSetTool(_RoomTool):
@@ -73,12 +74,12 @@ class AlarmSetTool(_RoomTool):
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        room = self._room(hass, llm_context)
-        if room is None:
+        engine, room = self._resolve(hass, llm_context)
+        if engine is None or room is None:
             return {"error": "Could not determine which room this alarm is for."}
         args = tool_input.tool_args or {}
         try:
-            alarm = await _engine(hass).async_add_alarm(
+            alarm = await engine.async_add_alarm(
                 time=args["time"],
                 room=room,
                 days=args.get("days"),
@@ -88,7 +89,7 @@ class AlarmSetTool(_RoomTool):
             )
         except ValidationError as err:
             return {"error": str(err)}
-        return {"success": True, "alarm": _engine(hass).alarm_summary(alarm)}
+        return {"success": True, "alarm": engine.alarm_summary(alarm)}
 
 
 class AlarmListTool(_RoomTool):
@@ -102,10 +103,10 @@ class AlarmListTool(_RoomTool):
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        room = self._room(hass, llm_context)
-        if room is None:
+        engine, room = self._resolve(hass, llm_context)
+        if engine is None or room is None:
             return {"error": "Could not determine which room to check."}
-        alarms = _engine(hass).alarms_for_room(room)
+        alarms = engine.alarms_for_room(room)
         return {
             "room": room,
             "count": len(alarms),
@@ -133,13 +134,11 @@ class AlarmStopTool(_RoomTool):
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        room = self._room(hass, llm_context)
-        if room is None:
+        engine, room = self._resolve(hass, llm_context)
+        if engine is None or room is None:
             return {"error": "Could not determine which room."}
-        engine = _engine(hass)
-        if engine.ringing(room) is None and engine.snoozed(room) is None:
+        if not await engine.async_stop_if_active(room):
             return {"stopped": False, "reason": "no alarm active"}
-        await engine.async_stop(room)
         return {"stopped": True}
 
 
@@ -155,14 +154,13 @@ class AlarmSnoozeTool(_RoomTool):
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        room = self._room(hass, llm_context)
-        if room is None:
+        engine, room = self._resolve(hass, llm_context)
+        if engine is None or room is None:
             return {"error": "Could not determine which room."}
-        engine = _engine(hass)
-        if engine.ringing(room) is None:
-            return {"snoozed": False, "reason": "no alarm ringing"}
         info = await engine.async_snooze(room, (tool_input.tool_args or {}).get("minutes"))
-        return {"snoozed": True, "wake_time": (info or {}).get("wake_time")}
+        if info is None:
+            return {"snoozed": False, "reason": "no alarm ringing"}
+        return {"snoozed": True, "wake_time": info.get("wake_time")}
 
 
 class AlarmClockAPI(llm.API):
@@ -175,9 +173,9 @@ class AlarmClockAPI(llm.API):
             "alarm_snooze (silence it for a few minutes). Do time/day parsing "
             "yourself and pass structured values."
         )
-        engine = _engine(self.hass)
-        room = engine.resolve_room_for_device(llm_context.device_id)
-        if room:
+        engine = get_engine(self.hass)
+        room = engine.resolve_room_for_device(llm_context.device_id) if engine else None
+        if engine and room:
             if engine.ringing(room) is not None:
                 prompt += (
                     " AN ALARM IS CURRENTLY RINGING in the user's room. If they "

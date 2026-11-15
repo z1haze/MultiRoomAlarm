@@ -1,10 +1,12 @@
-"""Generate the alarm ring tone at ../../www/alarm/alarm_tone.wav.
+"""Generate the bundled alarm tone, alarm_tone.wav, next to this script.
 
-Pure standard library, no deps. Re-run after tweaking the knobs below:
+The integration serves that file at <ha-url>/multi_room_alarm_static/
+alarm_tone.wav (see const.STATIC_URL_BASE / TONE_FILENAME). Pure standard
+library, no deps. Re-run after tweaking the knobs below:
 
-    python3 pyscript/alarm_data/gen_tone.py
+    python3 custom_components/multi_room_alarm/assets/gen_tone.py
 
-If you change the length, update RING_SOUND_SECONDS in alarm_clock.py.
+If you change the length, update RING_SOUND_SECONDS in ../const.py.
 """
 import math
 import os
@@ -28,7 +30,7 @@ RELEASE_MS = 10
 CYCLE_MS = len(FREQS) * (BEEP_MS + GAP_MS) - GAP_MS + REST_MS
 TOTAL_MS = CYCLE_MS * CYCLES
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "..", "www", "alarm", "alarm_tone.wav")
+OUT = os.path.join(os.path.dirname(__file__), "alarm_tone.wav")
 
 
 def env(i, n):

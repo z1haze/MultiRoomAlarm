@@ -19,7 +19,7 @@
 # So "bedroom-dashboard" means this dashboard drives the "bedroom" room, and you
 # must have created that room with `multi_room_alarm.room_set room_id: bedroom`.
 #
-# HACS cards used by these files: card-mod, button-card, mushroom, stack-in-card,
+# HACS cards used by these files: card-mod, button-card, stack-in-card,
 # layout-card (custom:grid-layout). Install those first.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -41,9 +41,9 @@ views:
         "main"
         "."
     cards:
-      # Next alarm + a link to the list. Reads sensor.<room>_next_alarm, where
-      # <room> is resolved server-side; the entity id is <room>-shaped, so match
-      # it from the URL.
+      # Next alarm + a link to the list. Finds the `*_next_alarm` sensor whose
+      # `room` attribute equals the room from the URL (keep the id suffix if you
+      # rename it).
       - type: custom:button-card
         view_layout:
           grid-area: main

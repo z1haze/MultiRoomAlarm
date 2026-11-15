@@ -6,22 +6,40 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, SIGNAL_STATE_CHANGED
+from .const import DOMAIN, SIGNAL_STATE_CHANGED, room_signal
 from .coordinator import AlarmClockEngine
 
 
-def room_signal(room_id: str) -> str:
-    return f"{SIGNAL_STATE_CHANGED}_{room_id}"
-
-
-class AlarmRoomEntity(Entity):
-    """Base for entities scoped to one room."""
+class AlarmBaseEntity(Entity):
+    """Base for every alarm entity: pushed, not polled — rewrites its state
+    whenever the engine fires one of `_signals()`."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(self, engine: AlarmClockEngine, room_id: str) -> None:
+    def __init__(self, engine: AlarmClockEngine) -> None:
         self._engine = engine
+
+    def _signals(self) -> tuple[str, ...]:
+        return (SIGNAL_STATE_CHANGED,)
+
+    async def async_added_to_hass(self) -> None:
+        for signal in self._signals():
+            self.async_on_remove(
+                async_dispatcher_connect(self.hass, signal, self._handle_update)
+            )
+
+    @callback
+    def _handle_update(self, *args) -> None:
+        self.async_write_ha_state()
+
+
+class AlarmRoomEntity(AlarmBaseEntity):
+    """Base for entities scoped to one room: on that room's device, and
+    also refreshed by the room's own signal."""
+
+    def __init__(self, engine: AlarmClockEngine, room_id: str) -> None:
+        super().__init__(engine)
         self._room_id = room_id
         room = engine.room(room_id) or {}
         self._attr_device_info = DeviceInfo(
@@ -35,18 +53,5 @@ class AlarmRoomEntity(Entity):
     def available(self) -> bool:
         return self._engine.room(self._room_id) is not None
 
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, room_signal(self._room_id), self._handle_update
-            )
-        )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, SIGNAL_STATE_CHANGED, self._handle_update
-            )
-        )
-
-    @callback
-    def _handle_update(self, *args) -> None:
-        self.async_write_ha_state()
+    def _signals(self) -> tuple[str, ...]:
+        return (room_signal(self._room_id), SIGNAL_STATE_CHANGED)

@@ -3,7 +3,8 @@
 Layout:
     const.py        constants + the room-record schema (ROOM_KEYS)
     coordinator.py  AlarmClockEngine — persistence, scheduler, fire/ring/snooze
-    services.py     the multi_room_alarm.* services (thin engine wrappers)
+    services.py     the multi_room_alarm.* services (thin engine wrappers;
+                    set_config writes the entry's options)
     llm_api.py      the "Alarm Clock" LLM API (set / list / stop / snooze tools)
     intent.py       sentence-matched intents (stop / snooze / show my alarms)
     binary_sensor.py / sensor.py   per-room ringing / snoozed / next-alarm entities
@@ -150,7 +151,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 # Sentence install                                                             #
 # --------------------------------------------------------------------------- #
 def _install_sentences(hass: HomeAssistant, component_dir: Path) -> None:
-    """Copy assets' `sentences/en.yaml` into <config>/custom_sentences/en/.
+    """Copy `sentences/en.yaml` into <config>/custom_sentences/en/.
 
     HA's conversation agent only loads custom sentences from that folder, so a
     packaged integration has to place the file there. Rewrites only when the

@@ -5,7 +5,7 @@
 # dashboard, plus the alarms list.
 #
 # position:fixed, covers the viewport while this room's
-# binary_sensor.<...>_alarm_ringing (matched by its `room` attribute) is "on".
+# binary_sensor.<...>_alarm_ringing (matched by the `_alarm_ringing` suffix plus its `room` attribute) is "on".
 # Room is derived from the dashboard URL path. Plain Lovelace, no browser_mod,
 # so it appears the instant the state flips.
 

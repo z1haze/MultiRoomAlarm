@@ -15,14 +15,10 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 
-from .const import DATA_ENGINE, DOMAIN
-from .coordinator import AlarmClockEngine, schedule_phrase
+from .const import dashboard_path
+from .coordinator import AlarmClockEngine, clock_phrase, get_engine, schedule_phrase
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _engine(hass: HomeAssistant) -> AlarmClockEngine | None:
-    return (hass.data.get(DOMAIN) or {}).get(DATA_ENGINE)
 
 
 async def async_setup_intents(hass: HomeAssistant) -> None:
@@ -38,10 +34,7 @@ def _speak_alarms(engine: AlarmClockEngine, room: str) -> str:
         return "You have no alarms set."
     parts = []
     for a in alarms:
-        hh, mm = a["time"].split(":")
-        hh = int(hh)
-        ap = "AM" if hh < 12 else "PM"
-        phrase = f"{hh % 12 or 12}:{mm} {ap}"
+        phrase = clock_phrase(a)
         sched = schedule_phrase(a)
         if sched:
             phrase += f" {sched}"
@@ -62,7 +55,7 @@ class AlarmListIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         hass = intent_obj.hass
-        engine = _engine(hass)
+        engine = get_engine(hass)
         response = intent_obj.create_response()
         if engine is None:
             response.async_set_speech("The alarm clock isn't set up.")
@@ -78,7 +71,7 @@ class AlarmListIntent(intent.IntentHandler):
             try:
                 await hass.services.async_call(
                     "browser_mod", "navigate",
-                    {"browser_id": browser, "path": f"/{room}-dashboard/alarms"},
+                    {"browser_id": browser, "path": dashboard_path(room, "alarms")},
                     blocking=False,
                 )
             except Exception:  # noqa: BLE001
@@ -98,7 +91,7 @@ class AlarmStopIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         hass = intent_obj.hass
-        engine = _engine(hass)
+        engine = get_engine(hass)
         response = intent_obj.create_response()
         if engine is None:
             response.async_set_speech("The alarm clock isn't set up.")
@@ -107,10 +100,9 @@ class AlarmStopIntent(intent.IntentHandler):
         if room is None:
             response.async_set_speech("I couldn't tell which room.")
             return response
-        if engine.ringing(room) is None and engine.snoozed(room) is None:
+        if not await engine.async_stop_if_active(room):
             response.async_set_speech("There's no alarm to stop.")
             return response
-        await engine.async_stop(room)
         response.async_set_speech("Alarm stopped.")
         return response
 
@@ -122,7 +114,7 @@ class AlarmSnoozeIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         hass = intent_obj.hass
-        engine = _engine(hass)
+        engine = get_engine(hass)
         slots = self.async_validate_slots(intent_obj.slots)
         response = intent_obj.create_response()
         if engine is None:
@@ -131,9 +123,6 @@ class AlarmSnoozeIntent(intent.IntentHandler):
         room = engine.resolve_room_for_device(intent_obj.device_id)
         if room is None:
             response.async_set_speech("I couldn't tell which room.")
-            return response
-        if engine.ringing(room) is None:
-            response.async_set_speech("There's no alarm going off.")
             return response
 
         minutes = None
@@ -144,6 +133,9 @@ class AlarmSnoozeIntent(intent.IntentHandler):
             except (TypeError, ValueError):
                 minutes = None
         info = await engine.async_snooze(room, minutes)
-        wake = (info or {}).get("wake_time")
+        if info is None:
+            response.async_set_speech("There's no alarm going off.")
+            return response
+        wake = info.get("wake_time")
         response.async_set_speech(f"Snoozed until {wake}." if wake else "Snoozed.")
         return response

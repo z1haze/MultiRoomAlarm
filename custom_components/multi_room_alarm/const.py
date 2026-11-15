@@ -17,7 +17,7 @@ STORAGE_VERSION: Final = 1
 STATIC_URL_BASE: Final = "/multi_room_alarm_static"
 TONE_FILENAME: Final = "alarm_tone.wav"
 
-# assets/sentences/en.yaml is copied here at setup (a generated artifact).
+# sentences/en.yaml is copied to <config>/custom_sentences/en/<this name> at setup.
 SENTENCE_TARGET_NAME: Final = "multi_room_alarm.yaml"
 
 # The LLM API tick-box shown in the conversation agent's settings.
@@ -28,6 +28,22 @@ LLM_API_NAME: Final = "Alarm Clock"
 # entities also listen on f"{SIGNAL_STATE_CHANGED}_{room_id}". Entity add/remove
 # is handled by reloading the config entry, not a signal.
 SIGNAL_STATE_CHANGED: Final = f"{DOMAIN}_state_changed"
+
+
+def room_signal(room_id: str) -> str:
+    """Dispatcher signal a single room's entities listen on."""
+    return f"{SIGNAL_STATE_CHANGED}_{room_id}"
+
+
+# Every room dashboard is registered at url_path "<room_id>-dashboard". The
+# dashboard partials derive the room from that URL, and the engine / intents
+# navigate the room's screen to it.
+DASHBOARD_URL_SUFFIX: Final = "-dashboard"
+
+
+def dashboard_path(room_id: str, view: str) -> str:
+    """`/<room_id>-dashboard/<view>`."""
+    return f"/{room_id}{DASHBOARD_URL_SUFFIX}/{view}"
 
 # --------------------------------------------------------------------------- #
 # Config-entry options / set_config keys                                       #
@@ -49,9 +65,10 @@ OPTION_KEYS: Final = (
 )
 
 # --------------------------------------------------------------------------- #
-# Room record — the keys a `room_set` call may store                           #
+# Room record — the keys a `room_set` call may store. The engine normalises  #
+# each group differently; the service schema must offer exactly these keys.  #
 # --------------------------------------------------------------------------- #
-ROOM_KEYS: Final = (
+ROOM_STR_KEYS: Final = (
     "name",                 # display name (also the room's HA device name)
     "area",                 # HA area id (or name) — links voice satellites to the room
     "nav_browser",          # browser_mod id — screen navigates here on fire
@@ -60,10 +77,13 @@ ROOM_KEYS: Final = (
     "device_volume",        # number.* hardware stream volume (auto-detected)
     "wake_screen_entity",   # switch/button that wakes the display (auto-detected)
     "sound", "sound_type",  # default wake media for the room
-    "alarm_volume",         # default volume for the room (0.0-1.0)
-    "fire_scene",            # scene.turn_on when an alarm fires
-    "fire_on", "fire_off",   # entities -> <domain>.turn_on / turn_off on fire
+    "fire_scene",           # scene.turn_on when an alarm fires
 )
+ROOM_LIST_KEYS: Final = (
+    "fire_on", "fire_off",  # entities -> <domain>.turn_on / turn_off on fire
+)
+ROOM_VOLUME_KEY: Final = "alarm_volume"   # default volume for the room (0.0-1.0)
+ROOM_KEYS: Final = (*ROOM_STR_KEYS, ROOM_VOLUME_KEY, *ROOM_LIST_KEYS)
 
 # --------------------------------------------------------------------------- #
 # Calendar strings                                                             #
@@ -73,10 +93,6 @@ DAY_NAMES: Final = {
     "mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
     "fri": "Friday", "sat": "Saturday", "sun": "Sunday",
 }
-MONTHS_SHORT: Final = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-]
 MONTHS_LONG: Final = [
     "January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December",

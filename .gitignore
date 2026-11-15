@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Public repo for the Multi-Room Alarm Clock integration.
+# Public repo for the Multi-Room Alarm Clock integration (plus its agent docs:
+# CLAUDE.md, docs/agents/ — keep house-specific details in CLAUDE.local.md).
 #
 # This git repo lives INSIDE a live Home Assistant config folder, which holds
 # hundreds of files that are NOT part of this project (secrets, the HA database,
@@ -19,10 +20,12 @@
 # ── Repo meta ───────────────────────────────────────────────────────────────
 !/.gitignore
 !/README.md
+!/CLAUDE.md
+!/GLOSSARY.md
 !/LICENSE
 !/hacs.json
 !/.github/
-# screenshots referenced by the README
+# screenshots referenced by the README, brand source, agent docs
 !/docs/
 
 # ── The integration ────────────────────────────────────────────────────────
