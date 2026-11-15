@@ -64,7 +64,8 @@ Packaged as a distributable custom integration:
   `set_config`, which writes the config entry's options).
 - `llm_api.py` — the "Alarm Clock" LLM API: tools `alarm_set`, `alarm_list`,
   `alarm_stop`, `alarm_snooze`. Room is resolved server-side from the calling
-  device's area — the model never passes a room.
+  device's area; `alarm_set` / `alarm_list` take an optional spoken `room`
+  (room name or area name) that overrides it.
 - `intent.py` — sentence-matched intents (stop / snooze / show my alarms).
 - `binary_sensor.py` / `sensor.py` — per-room `*_alarm_ringing`,
   `*_alarm_snoozed`, `*_next_alarm` entities (all carry a `room` attribute —

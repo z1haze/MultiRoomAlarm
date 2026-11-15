@@ -635,6 +635,45 @@ class AlarmClockEngine:
             return next(iter(self._data["rooms"]))
         return None
 
+    def room_name(self, room_id: str) -> str:
+        """The room's display name ("Dad's Room"), or its id if it has none."""
+        return (self.room(room_id) or {}).get("name") or room_id
+
+    def room_area_name(self, room_id: str) -> str | None:
+        """Name of the HA area the room points at (its `area` is an id or a name)."""
+        ref = self.room_area(room_id).strip()
+        if not ref:
+            return None
+        area_reg = ar.async_get(self.hass)
+        area = area_reg.async_get_area(ref) or area_reg.async_get_area_by_name(ref)
+        return area.name if area else None
+
+    def room_choices(self) -> list[str]:
+        """Each room's name, plus its area's name when that differs —
+        "Dad's Room (area: Bedroom)" — so the LLM knows both work."""
+        out = []
+        for room_id in self._data["rooms"]:
+            name, area = self.room_name(room_id), self.room_area_name(room_id)
+            out.append(f"{name} (area: {area})" if area and area.lower() != name.lower() else name)
+        return out
+
+    def resolve_room_by_name(self, spoken: str | None) -> str | None:
+        """A spoken room name -> room id. Case-insensitive match on the room's
+        `name`, then on the name of the area it points at. Nothing fuzzier:
+        the LLM tool descriptions hand the model the exact names."""
+        want = str(spoken or "").strip().lower()
+        if not want:
+            return None
+        rooms = self._data["rooms"]
+        for room_id in rooms:
+            if self.room_name(room_id).lower() == want:
+                return room_id
+        for room_id in rooms:
+            area = self.room_area_name(room_id)
+            if area and area.lower() == want:
+                return room_id
+        return None
+
     def is_area_listening(self, area: str) -> bool:
         """True while any assist_satellite in `area` is mid voice-interaction.
         The ring loop checks this and stays silent so the mic can hear "stop".

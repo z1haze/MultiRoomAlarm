@@ -1,7 +1,8 @@
 """LLM API — lets the conversation agent create/read/stop/snooze alarms.
 
-The room is resolved server-side from the calling device (device -> area ->
-the matching room). The model never passes a room.
+Stop and snooze act on the calling device's room (device -> area -> the
+matching room). Set and list take an optional spoken `room` that overrides it;
+their descriptions list the room names, rebuilt per conversation.
 """
 from __future__ import annotations
 
@@ -50,20 +51,70 @@ class _RoomTool(llm.Tool):
         return engine, room
 
 
-class AlarmSetTool(_RoomTool):
+class _NamedRoomTool(_RoomTool):
+    """Base for tools that take an optional spoken `room`. The description
+    template's `{rooms}` is filled with the current room names."""
+
+    _description: str
+
+    def __init__(self, room_choices: list[str]) -> None:
+        self.description = self._description.format(rooms=_join(room_choices))
+
+    @staticmethod
+    def _resolve_named(
+        hass: HomeAssistant, llm_context: llm.LLMContext, spoken: str | None
+    ) -> tuple[AlarmClockEngine | None, str | None, str | None]:
+        """(engine, room id, error). A named room wins over the device's room;
+        with neither, the error lists the rooms so the model can ask."""
+        engine = get_engine(hass)
+        if engine is None:
+            return None, None, "The alarm clock isn't set up."
+        rooms = _join(engine.room_choices())
+        if spoken and spoken.strip():
+            room = engine.resolve_room_by_name(spoken)
+            if room is None:
+                return engine, None, (
+                    f"There's no room called {spoken.strip()!r}. The rooms are: "
+                    f"{rooms}. If the user meant one of these, call again with "
+                    "its name or area name exactly; otherwise ask them which one."
+                )
+            return engine, room, None
+        room = engine.resolve_room_for_device(llm_context.device_id)
+        if room is None:
+            return engine, None, (
+                f"Which room? This device isn't in one. The rooms are: {rooms}. "
+                "Ask the user which one."
+            )
+        return engine, room, None
+
+
+def _join(names: list[str]) -> str:
+    return ", ".join(names) or "(none configured)"
+
+
+_ROOM_ARG = (
+    "`room` is optional. Whenever the user names a room or place, pass what "
+    "they said, even if it isn't one of the rooms — the rooms are: {rooms} "
+    "(a room's name or its area name both work). Leave it out only when the "
+    "user names no room; then the room of the device they're talking to is used."
+)
+
+
+class AlarmSetTool(_NamedRoomTool):
     name = "alarm_set"
-    description = (
-        "Set an alarm for the room the user is currently in (detected "
-        "automatically from the device — never ask which room). `time` is "
+    _description = (
+        "Set an alarm. " + _ROOM_ARG + " `time` is "
         "24-hour HH:MM. For a repeating alarm pass `days` as comma-separated "
         "weekday abbreviations (mon,tue,wed,thu,fri,sat,sun). For a one-time "
         "alarm pass `date` as YYYY-MM-DD instead of days (compute it from "
         "'tomorrow', 'this Saturday', etc.). Optionally pass `sound`: a song, "
-        "artist, or playlist name to wake up to."
+        "artist, or playlist name to wake up to. The result's `room` says "
+        "which room the alarm went to."
     )
     parameters = vol.Schema(
         {
             vol.Required("time"): str,
+            vol.Optional("room"): str,
             vol.Optional("days"): str,
             vol.Optional("date"): str,
             vol.Optional("sound"): str,
@@ -74,10 +125,10 @@ class AlarmSetTool(_RoomTool):
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        engine, room = self._resolve(hass, llm_context)
-        if engine is None or room is None:
-            return {"error": "Could not determine which room this alarm is for."}
         args = tool_input.tool_args or {}
+        engine, room, error = self._resolve_named(hass, llm_context, args.get("room"))
+        if error:
+            return {"error": error}
         try:
             alarm = await engine.async_add_alarm(
                 time=args["time"],
@@ -89,26 +140,32 @@ class AlarmSetTool(_RoomTool):
             )
         except ValidationError as err:
             return {"error": str(err)}
-        return {"success": True, "alarm": engine.alarm_summary(alarm)}
+        return {
+            "success": True,
+            "room": engine.room_name(room),
+            "alarm": engine.alarm_summary(alarm),
+        }
 
 
-class AlarmListTool(_RoomTool):
+class AlarmListTool(_NamedRoomTool):
     name = "alarm_list"
-    description = (
-        "List the alarms set for the room the user is currently in. Takes no "
-        "arguments. Returns each alarm's time, schedule and whether it's enabled."
+    _description = (
+        "List a room's alarms. " + _ROOM_ARG + " Returns each alarm's time, "
+        "schedule and whether it's enabled."
     )
-    parameters = vol.Schema({})
+    parameters = vol.Schema({vol.Optional("room"): str})
 
     async def async_call(
         self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
     ) -> JsonObjectType:
-        engine, room = self._resolve(hass, llm_context)
-        if engine is None or room is None:
-            return {"error": "Could not determine which room to check."}
+        engine, room, error = self._resolve_named(
+            hass, llm_context, (tool_input.tool_args or {}).get("room")
+        )
+        if error:
+            return {"error": error}
         alarms = engine.alarms_for_room(room)
         return {
-            "room": room,
+            "room": engine.room_name(room),
             "count": len(alarms),
             "alarms": [
                 {
@@ -168,12 +225,14 @@ class AlarmClockAPI(llm.API):
 
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
         prompt = (
-            "Alarm-clock tools for the user's current room: alarm_set (create), "
-            "alarm_list (read), alarm_stop (dismiss the ringing alarm), "
-            "alarm_snooze (silence it for a few minutes). Do time/day parsing "
-            "yourself and pass structured values."
+            "Alarm-clock tools: alarm_set (create), alarm_list (read) — both "
+            "for the user's current room unless they name another — and "
+            "alarm_stop (dismiss the ringing alarm), alarm_snooze (silence it "
+            "for a few minutes), which act on the user's current room. Do "
+            "time/day parsing yourself and pass structured values."
         )
         engine = get_engine(self.hass)
+        names = engine.room_choices() if engine else []
         room = engine.resolve_room_for_device(llm_context.device_id) if engine else None
         if engine and room:
             if engine.ringing(room) is not None:
@@ -189,5 +248,10 @@ class AlarmClockAPI(llm.API):
             api=self,
             api_prompt=prompt,
             llm_context=llm_context,
-            tools=[AlarmSetTool(), AlarmListTool(), AlarmStopTool(), AlarmSnoozeTool()],
+            tools=[
+                AlarmSetTool(names),
+                AlarmListTool(names),
+                AlarmStopTool(),
+                AlarmSnoozeTool(),
+            ],
         )

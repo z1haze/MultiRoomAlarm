@@ -1,18 +1,5 @@
 # Backlog
 
-## 1. Name the room by voice when setting or listing alarms
-
-**Actor:** someone talking to a device with no room, like the HA app on a phone, or to a device in a different room.
-**Does:** `alarm_set` and `alarm_list` (llm_api.py) get an optional `room` argument. The integration matches it, ignoring case, against each room's `name`, its room id and the name of its `area`. If no room is named, it falls back to the calling device's room, as it does now. A room named in the command overrides the device's room.
-**Done when:**
-- "Set an alarm in the bedroom for 7am" from the phone app creates the alarm for `bedroom`.
-- "What alarms are set in the bedroom" from the phone lists them.
-- An unknown room name returns an error that lists the valid room names.
-- If no room is named and the device has no room, the error asks which room and lists the valid ones.
-- The tool descriptions and API prompt stop saying "never ask which room".
-**Out of scope:** `alarm_stop` and `alarm_snooze` stay tied to the device's room. The sentence intents in intent.py are unchanged.
-**Depends on:** nothing.
-
 ## 2. Preview an alarm's music from the alarms list
 
 **Actor:** a household member looking at a room's alarms list.

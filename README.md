@@ -61,7 +61,8 @@ tapping.
   exact media that was playing.
 - **Voice** — an LLM API (`alarm_set` / `alarm_list` / `alarm_stop` /
   `alarm_snooze`) plus sentence-matched `stop` / `snooze` / `show my alarms`.
-  The room is resolved from the calling device — never asked.
+  The room is the calling device's, unless you name another when setting or
+  listing alarms ("…in the bedroom").
 - **Mic-aware ring loop** — while a satellite in the ringing room is listening,
   the ring loop stops re-asserting volume and playback, so the satellite's own
   ducking can quiet it and the mic can hear "stop"; it resumes afterwards.
@@ -189,8 +190,8 @@ data: { room_id: bedroom }
 # copy `config`, edit a field, pass it back to room_set
 ```
 
-The **`room_id` matters**: it's what the model passes internally, what the
-dashboard URL encodes, and what alarms reference.
+The **`room_id` matters**: it's what the dashboard URL encodes and what alarms
+reference. By voice, a room is named by its `name` or its area's name.
 
 ---
 
@@ -201,6 +202,9 @@ By voice, to the satellite in that room:
 > "Set an alarm for 7 AM on weekdays"
 > "Wake me at 6:30 tomorrow"
 > "Set an alarm for 8 o'clock playing my Focus playlist"
+
+From the phone app or another room, name the room: *"Set an alarm for 7 in the
+bedroom"*.
 
 Or with an action:
 
@@ -313,8 +317,12 @@ freely, but keep the suffix. `sensor.alarms` is read by that exact id.
 ## Voice
 
 **LLM API "Alarm Clock"** (enable it on your assistant): `alarm_set`,
-`alarm_list`, `alarm_stop`, `alarm_snooze`. The model never passes a room — it's
-resolved from the device the request came from.
+`alarm_list`, `alarm_stop`, `alarm_snooze`. The room is the one the requesting
+device is in. `alarm_set` and `alarm_list` also take a spoken room — its `name`
+or its area's name, ignoring case — so *"set an alarm for 7 in the bedroom"*
+works from a phone or another room's satellite. Unknown room, or a device with
+no room and none named: the assistant lists the rooms and asks. Stop and snooze
+always act on the device's own room.
 
 **Sentence intents** (matched before the LLM, so they're instant and free):
 
