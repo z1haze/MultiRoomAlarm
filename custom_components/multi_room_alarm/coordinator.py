@@ -646,7 +646,7 @@ class AlarmClockEngine:
         return None
 
     def room_name(self, room_id: str) -> str:
-        """The room's display name ("Dad's Room"), or its id if it has none."""
+        """The room's display name ("Guest Room"), or its id if it has none."""
         return (self.room(room_id) or {}).get("name") or room_id
 
     def room_area_name(self, room_id: str) -> str | None:
@@ -660,7 +660,7 @@ class AlarmClockEngine:
 
     def room_choices(self) -> list[str]:
         """Each room's name, plus its area's name when that differs —
-        "Dad's Room (area: Bedroom)" — so the LLM knows both work."""
+        "Guest Room (area: Bedroom)" — so the LLM knows both work."""
         out = []
         for room_id in self._data["rooms"]:
             name, area = self.room_name(room_id), self.room_area_name(room_id)

@@ -166,8 +166,8 @@ Actions). Call it once per room:
 ```yaml
 action: multi_room_alarm.room_set
 data:
-  room_id: bedroom                                  # short id, used in voice/URLs
-  name: "Bedroom"
+  room_id: bedroom                                  # short id: URLs, actions, alarm records
+  name: "Bedroom"                                    # what you say by voice ("…in the bedroom")
   area: bedroom                                      # the satellite's area
   music_player: media_player.bedroom_speaker_ma      # a Music Assistant player
   media_player: media_player.bedroom_echo            # the device's own player (tone fallback)
