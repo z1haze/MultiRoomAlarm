@@ -86,6 +86,17 @@ snooze:
       example: 9
       selector: { number: { min: 1, max: 60, step: 1, mode: box } }
 
+preview:
+  name: Preview alarm song
+  description: Play an alarm's own song in its room at the alarm's volume, without ringing.
+  fields:
+    id: { required: true, example: a1b2c3d4, selector: { text: {} } }
+
+preview_stop:
+  name: Stop preview
+  fields:
+    room: { required: true, example: bedroom, selector: { text: {} } }
+
 set_config:
   name: Set defaults
   fields:

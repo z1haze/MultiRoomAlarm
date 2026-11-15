@@ -1,17 +1,5 @@
 # Backlog
 
-## 2. Preview an alarm's music from the alarms list
-
-**Actor:** a household member looking at a room's alarms list.
-**Does:** each alarm row whose alarm has its own `sound` (the rows that already show ♪) gets a play button. Tapping it plays that alarm's music on the room's `music_player` at the alarm's volume. Nothing else happens: no ringing overlay, no `fire_on` targets, no snooze. While it plays, that row's button turns into a stop button. Stop ends playback and restores the player's volume. Rows without their own `sound` get no button.
-**Done when:**
-- Tapping play on a ♪ row plays that alarm's song on the room's `music_player`, and its button shows stop.
-- Tapping stop silences it, restores the volume, and the button shows play again.
-- Rows without their own `sound` show no button.
-- The new action is documented in README Actions and `services.yaml`.
-**Out of scope:** previewing the default tone or the room's default music; using preview to test a full ring (that's `fire`).
-**Depends on:** nothing. Detail: `.scratch/alarm-preview/notes.md`.
-
 ## 3. Audit leftovers (2026-11-15): one way to reach the engine, normalise room ids, surface service errors
 
 **Actor:** the admin, calling `multi_room_alarm.*` from Developer Tools or YAML.

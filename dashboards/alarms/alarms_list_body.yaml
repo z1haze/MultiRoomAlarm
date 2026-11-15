@@ -9,8 +9,9 @@
 # dashboard root (for `alarm_header` and `alarm_row`).
 #
 # Room is derived from the URL path: /<room>-dashboard/...  ->  room = "<room>".
-# Tap a row to enable/disable; press-and-hold to delete (confirm). Alarms are
-# created by voice, not here. 8 slots cap how many a room can show; empties hide.
+# Tap a row to enable/disable; press-and-hold to delete (confirm); ▶ previews a
+# ♪ row's song. Alarms are created by voice, not here. 8 slots cap how many a
+# room can show; empties hide.
 
 type: custom:stack-in-card
 mode: vertical

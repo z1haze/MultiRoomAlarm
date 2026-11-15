@@ -14,6 +14,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .const import (
@@ -172,6 +173,16 @@ def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def snooze(call: ServiceCall) -> None:
         await engine.async_snooze(call.data["room"], call.data.get("snooze"))
 
+    # --- preview --------------------------------------------------------- #
+    async def preview(call: ServiceCall) -> None:
+        try:
+            await engine.async_preview(call.data["id"])
+        except ValidationError as err:
+            raise ServiceValidationError(str(err)) from err
+
+    async def preview_stop(call: ServiceCall) -> None:
+        await engine.async_preview_stop(call.data["room"])
+
     # --- config + rooms ------------------------------------------------- #
     async def set_config(call: ServiceCall) -> None:
         # Saved into the entry's options — the store the options form writes and
@@ -225,6 +236,8 @@ def async_register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ("fire", fire, SCHEMA_FIRE, NONE),
         ("stop", stop, SCHEMA_ROOM, NONE),
         ("snooze", snooze, SCHEMA_SNOOZE, NONE),
+        ("preview", preview, SCHEMA_ID, NONE),
+        ("preview_stop", preview_stop, SCHEMA_ROOM, NONE),
         ("set_config", set_config, SCHEMA_SET_CONFIG, NONE),
         ("room_set", room_set, SCHEMA_ROOM_SET, NONE),
         ("room_get", room_get, SCHEMA_ROOM_GET, ONLY),

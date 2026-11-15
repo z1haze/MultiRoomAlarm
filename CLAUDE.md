@@ -59,7 +59,9 @@ Packaged as a distributable custom integration:
 `custom_components/multi_room_alarm/`.
 
 - `coordinator.py` — `AlarmClockEngine`: JSON persistence (HA `Store`,
-  key `multi_room_alarm`), minute-tick scheduler, fire / ring / snooze.
+  key `multi_room_alarm`), minute-tick scheduler, fire / ring / snooze, and the
+  in-memory per-room preview (play one alarm's own song without ringing; a ring
+  in the room ends it).
 - `services.py` — `multi_room_alarm.*` services (thin engine wrappers, except
   `set_config`, which writes the config entry's options).
 - `llm_api.py` — the "Alarm Clock" LLM API: tools `alarm_set`, `alarm_list`,
@@ -70,7 +72,8 @@ Packaged as a distributable custom integration:
 - `binary_sensor.py` / `sensor.py` — per-room `*_alarm_ringing`,
   `*_alarm_snoozed`, `*_next_alarm` entities (all carry a `room` attribute —
   the dashboards match on it plus the id suffix), plus the global `sensor.alarms` (count; full
-  list + the dashboard's `weather_entity` / `clock_entity` as attributes).
+  list, `previewing` `{room_id: alarm_id}`, and the dashboard's `weather_entity` /
+  `clock_entity` as attributes).
 - `sentences/en.yaml` — custom voice sentences.
 - Dashboards: `dashboards/`. One root (`dashboards/<room>.yaml`) and optional
   folder per room (local-only, not committed; each has its own design) plus

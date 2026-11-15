@@ -11,3 +11,6 @@ has no device's room, unless the house has only one room.
 
 **Named room** — a room someone says out loud in a command ("…in Dad's room"). It overrides the device's room for
 setting and listing alarms; stopping and snoozing always act on the device's room.
+
+**Preview** — playing one alarm's own song in its room, on demand, at that alarm's volume, to hear what it will sound
+like. Not a ring: no screen wake, no lights or fan, no snooze, no fallback tone. A ring in the same room ends it.

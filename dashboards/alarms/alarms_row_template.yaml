@@ -12,6 +12,7 @@
 #                   variables.slot = 0-based index into this room's alarms,
 #                   sorted by time; empty slots render hidden. Room is derived
 #                   from the dashboard URL path (/<room>-dashboard/...).
+#                   Rows with their own song (♪) get a ▶ / ■ preview button.
 #   weather_chip  - little "icon 12°" weather widget. variables.color and
 #                   variables.size adapt it per context.
 
@@ -157,6 +158,67 @@ alarm_row:
       return a.sound ? `${when} · ${a.sound}` : when;
     ]]]
   custom_fields:
+    # ▶ / ■ preview button, only on rows with their own song (♪). Its own tap
+    # doesn't reach the row's toggle. Plays via `preview` (id), stops via
+    # `preview_stop` (room); the unused key is undefined, so it isn't sent.
+    play:
+      card:
+        type: custom:button-card
+        show_icon: true
+        show_name: false
+        icon: >
+          [[[
+            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+            const st = hass.states['sensor.alarms']?.attributes || {};
+            const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+            const a = list[variables.slot];
+            return a && (st.previewing || {})[room] === a.id ? 'mdi:stop-circle-outline' : 'mdi:play-circle-outline';
+          ]]]
+        tap_action:
+          action: call-service
+          service: >
+            [[[
+              const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+              const st = hass.states['sensor.alarms']?.attributes || {};
+              const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+              const a = list[variables.slot];
+              return a && (st.previewing || {})[room] === a.id
+                ? 'multi_room_alarm.preview_stop' : 'multi_room_alarm.preview';
+            ]]]
+          data:
+            id: >
+              [[[
+                const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+                const st = hass.states['sensor.alarms']?.attributes || {};
+                const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+                const a = list[variables.slot];
+                return a && (st.previewing || {})[room] !== a.id ? a.id : undefined;
+              ]]]
+            room: >
+              [[[
+                const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+                const st = hass.states['sensor.alarms']?.attributes || {};
+                const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+                const a = list[variables.slot];
+                return a && (st.previewing || {})[room] === a.id ? room : undefined;
+              ]]]
+        styles:
+          card:
+            - background: none
+            - box-shadow: none
+            - border: none
+            - padding: 6px
+            - width: 48px
+            - height: 48px
+            - display: >
+                [[[
+                  const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+                  const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+                  const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+                  return list[variables.slot]?.sound ? 'block' : 'none';
+                ]]]
+          icon:
+            - width: 32px
     toggle: >
       [[[
         const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
@@ -195,8 +257,8 @@ alarm_row:
             return list[variables.slot]?.enabled ? '1' : '0.5';
           ]]]
     grid:
-      - grid-template-areas: '"n toggle" "l toggle"'
-      - grid-template-columns: 1fr auto
+      - grid-template-areas: '"n play toggle" "l play toggle"'
+      - grid-template-columns: 1fr auto auto
       - grid-template-rows: auto auto
       - align-items: center
       - column-gap: 12px
@@ -212,6 +274,9 @@ alarm_row:
       - font-size: 16px
       - margin-top: 3px
     custom_fields:
+      play:
+        - justify-self: end
+        - align-self: center
       toggle:
         - justify-self: end
         - align-self: center

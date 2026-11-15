@@ -119,5 +119,8 @@ SOUND_GRACE_SECONDS: Final = 8     # time a custom song gets to actually start
 PLAY_CALL_TIMEOUT: Final = 15      # give up on a wedged play_media call
 PLAY_SETTLE_SECONDS: Final = 1     # pause after waking the screen, before playback
 
+PREVIEW_MAX_MINUTES: Final = 5     # cap on a preview whose player never goes idle
+PREVIEW_POLL_SECONDS: Final = 5    # how often a preview checks its player is still playing
+
 # MediaPlayerEntityFeature.REPEAT_SET
 FEATURE_REPEAT_SET: Final = 262144

@@ -112,6 +112,8 @@ class AlarmsListSensor(AlarmBaseEntity, SensorEntity):
             "alarms": [
                 {**a, "schedule": schedule_phrase(a)} for a in self._engine.alarms
             ],
+            # {room_id: alarm_id} — drives the list rows' play / stop button.
+            "previewing": self._engine.previewing(),
             # Surfaced for the dashboard cards (ringing-screen chip / clock).
             "weather_entity": cfg.get(CONF_WEATHER_ENTITY) or None,
             "clock_entity": cfg.get(CONF_CLOCK_ENTITY) or None,

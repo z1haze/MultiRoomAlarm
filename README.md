@@ -28,7 +28,8 @@ or say it. Plain Lovelace, so it appears the instant the alarm goes off.
 <td width="50%">
 
 **Alarm list** — one screen per room. Recurring and one-time alarms, ♪ marks a
-custom wake song. Tap a row to toggle, press-and-hold to delete.
+custom wake song; tap ▶ on a ♪ row to hear it. Tap a row to toggle,
+press-and-hold to delete.
 
 ![Alarm list](docs/screenshots/alarms.png)
 
@@ -67,7 +68,8 @@ tapping.
   the ring loop stops re-asserting volume and playback, so the satellite's own
   ducking can quiet it and the mic can hear "stop"; it resumes afterwards.
 - **Dashboard cards** — an Alexa-style full-screen ringing overlay, an alarm
-  list with tap-to-toggle / hold-to-delete, and a next-alarm chip. All driven by
+  list with tap-to-toggle / hold-to-delete and a ▶ preview of each alarm's own
+  song, and a next-alarm chip. All driven by
   the integration's entities; no per-room copies.
 
 ---
@@ -277,7 +279,7 @@ Global:
 
 | entity | |
 |---|---|
-| `sensor.alarms` | count of alarms; full list in the `alarms` attribute (used by the dashboard's capped slots). |
+| `sensor.alarms` | count of alarms; full list in the `alarms` attribute (used by the dashboard's capped slots); `previewing` is `{room_id: alarm_id}` for each room playing a preview. |
 
 The dashboard cards find the per-room entities by the **`room` attribute** plus
 the default id suffix (`_alarm_ringing`, `_next_alarm`) — rename the prefix
@@ -296,6 +298,8 @@ freely, but keep the suffix. `sensor.alarms` is read by that exact id.
 | `multi_room_alarm.fire` | fire an alarm now, for testing (`room`; optional `alarm_id`, and `sound` (+ its `sound_type`) / `volume` to override the room's). |
 | `multi_room_alarm.stop` | stop the ringing/snoozed alarm in `room`. |
 | `multi_room_alarm.snooze` | snooze the ringing alarm in `room` (`snooze:` minutes). |
+| `multi_room_alarm.preview` | play alarm `id`'s own song on its room's `music_player` at the alarm's volume — no screen wake, lights or tone fallback. Replaces a preview already playing in the room; ends by itself when the song ends (or after 5 min). Errors if the alarm has no own `sound`, or the room is ringing or has no `music_player`. |
+| `multi_room_alarm.preview_stop` | stop the preview in `room` and restore its volume. |
 | `multi_room_alarm.room_set` | create/replace a room record. |
 | `multi_room_alarm.room_get` | read a room record + its alarms (response data). |
 | `multi_room_alarm.room_delete` | delete a room and its alarms. |

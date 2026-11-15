@@ -23,7 +23,7 @@ Data model — one Store (`.storage/multi_room_alarm`) holding four keys:
 
 Responsibilities, in the order the sections appear below:
     lifecycle · config · rooms · alarms (CRUD) · published state ·
-    voice helpers · firing (fire / ring loop / stop / snooze) ·
+    voice helpers · firing (fire / ring loop / stop / snooze) · preview ·
     media + volume plumbing · the once-a-minute scheduler · speech formatting
 """
 from __future__ import annotations
@@ -60,6 +60,8 @@ from .const import (
     MONTHS_LONG,
     PLAY_CALL_TIMEOUT,
     PLAY_SETTLE_SECONDS,
+    PREVIEW_MAX_MINUTES,
+    PREVIEW_POLL_SECONDS,
     RING_MAX_MINUTES,
     RING_REASSERT_SECONDS,
     RING_REPLAY_MIN_GAP,
@@ -183,6 +185,8 @@ class AlarmClockEngine:
         self._prev_volume: dict[str, dict[str, Any]] = {}  # room_id -> {entity: level before ring}
         self._ring_params: dict[str, dict[str, Any]] = {}  # room_id -> resolved sound/volume of current ring
         self._ring_tasks: dict[str, asyncio.Task] = {}     # room_id -> running _ring_loop task
+        self._previews: dict[str, dict[str, Any]] = {}     # room_id -> {alarm_id, volume: {entity: level before}}
+        self._preview_tasks: dict[str, asyncio.Task] = {}  # room_id -> running _preview_watch task
 
     # ===================================================================== #
     # Lifecycle                                                              #
@@ -218,13 +222,15 @@ class AlarmClockEngine:
         await self._async_save()
 
     async def async_unload(self) -> None:
-        """Cancel every running ring loop."""
-        for task in list(self._ring_tasks.values()):
+        """Cancel every running ring loop and preview watcher."""
+        tasks = [*self._ring_tasks.values(), *self._preview_tasks.values()]
+        for task in tasks:
             task.cancel()
-        for task in list(self._ring_tasks.values()):
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
         self._ring_tasks.clear()
+        self._preview_tasks.clear()
 
     async def _async_save(self) -> None:
         await self._store.async_save(self._data)
@@ -604,6 +610,10 @@ class AlarmClockEngine:
         """{until, wake_time} while this room has a pending snooze, else None."""
         return self._snoozed_pub.get(room_id)
 
+    def previewing(self) -> dict[str, str]:
+        """{room_id: alarm_id} for every room playing a preview."""
+        return {room_id: p["alarm_id"] for room_id, p in self._previews.items()}
+
     @callback
     def _publish_room(self, room_id: str) -> None:
         """Tell one room's entities (and the global alarms sensor) to refresh."""
@@ -726,6 +736,12 @@ class AlarmClockEngine:
             return
 
         _LOGGER.warning("FIRING alarm '%s' for room '%s'", alarm_id, room_id)
+
+        # A ring ends a preview in this room. The volume the preview remembered
+        # goes to the ring, so stopping the ring restores the pre-preview level.
+        preview = await self._preview_end(room_id, restore_volume=False)
+        if preview is not None:
+            self._prev_volume.setdefault(room_id, preview["volume"])
 
         # A new alarm fully replaces one already ringing in this room.
         if room_id in self._ringing:
@@ -1004,6 +1020,103 @@ class AlarmClockEngine:
             await self._async_save()
         self._snoozed_pub.pop(room_id, None)
         self._publish_room(room_id)
+
+    # ===================================================================== #
+    # Preview — hear an alarm's own song, without ringing                  #
+    # ===================================================================== #
+    async def async_preview(self, alarm_id: str) -> None:
+        """Play one alarm's own song on its room's music player at the alarm's
+        volume. No screen wake, no fire targets, no repeat, no tone fallback.
+        A preview already playing in the room is replaced; the volume it
+        remembered is kept, so the eventual stop restores the original level."""
+        alarm = self.get_alarm(alarm_id)
+        if alarm is None:
+            raise ValidationError(f"no alarm with id '{alarm_id}'")
+        if not alarm.get("sound"):
+            raise ValidationError("that alarm has no song of its own to preview")
+        room_id = alarm.get("room")
+        room = self.room(room_id) or {}
+        if room_id in self._ringing:
+            raise ValidationError(f"room '{room_id}' is ringing")
+        player = room.get("music_player")
+        if not player:
+            raise ValidationError(f"room '{room_id}' has no music_player to preview on")
+
+        old = await self._preview_end(room_id, restore_volume=False)
+        entities = self._volume_entities(room)
+        record = {
+            "alarm_id": alarm_id,
+            "volume": old["volume"] if old else {
+                e: raw for e in entities if (raw := self._vol_get(e)) is not None
+            },
+        }
+        self._previews[room_id] = record
+        self._publish_room(room_id)
+
+        volume = alarm.get("volume")
+        target = normalize_volume(volume if volume is not None else room.get("alarm_volume"))
+        await self._vol_force(entities, self.default_volume if target is None else target)
+        active = await self._play_custom(player, alarm["sound"], alarm.get("sound_type"))
+        await self._set_repeat(active, "off")
+
+        # A ring, a stop or another preview may have taken over while we played.
+        # Stopped (nothing else owns the room now): silence what we just started.
+        if self._previews.get(room_id) is not record:
+            if active and room_id not in self._previews and room_id not in self._ringing:
+                with contextlib.suppress(Exception):
+                    await self._call("media_player", "media_stop", entity_id=active, blocking=True)
+            return
+        if active is None:
+            await self._preview_end(room_id)
+            return
+        self._preview_tasks[room_id] = self.hass.async_create_background_task(
+            self._preview_watch(room_id, player), name=f"{DOMAIN}_preview_{room_id}"
+        )
+        _LOGGER.info("Previewing alarm '%s' in room '%s'", alarm_id, room_id)
+
+    async def async_preview_stop(self, room_id: str) -> None:
+        """Public: the `preview_stop` service. No-op if the room isn't previewing."""
+        await self._preview_end(room_id)
+
+    async def _preview_watch(self, room_id: str, player: str) -> None:
+        """End the preview when the song didn't start within the grace period,
+        when the player stops playing, or at PREVIEW_MAX_MINUTES."""
+        await asyncio.sleep(SOUND_GRACE_SECONDS)
+        elapsed = SOUND_GRACE_SECONDS
+        if self._state(player) == "playing":
+            while elapsed < PREVIEW_MAX_MINUTES * 60:
+                await asyncio.sleep(PREVIEW_POLL_SECONDS)
+                elapsed += PREVIEW_POLL_SECONDS
+                if self._state(player) not in ("playing", "buffering"):
+                    break
+        else:
+            _LOGGER.warning("Preview song for '%s' didn't start — ending the preview", room_id)
+        await self._preview_end(room_id)
+
+    async def _preview_end(
+        self, room_id: str, *, restore_volume: bool = True
+    ) -> dict[str, Any] | None:
+        """Stop the room's preview: cancel its watcher (unless that's the
+        caller), stop the music player and, unless the caller takes the
+        remembered volume over, restore it. Returns the ended preview or None."""
+        preview = self._previews.pop(room_id, None)
+        if preview is None:
+            return None
+        task = self._preview_tasks.pop(room_id, None)
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        player = (self.room(room_id) or {}).get("music_player")
+        if player:
+            with contextlib.suppress(Exception):
+                await self._call("media_player", "media_stop", entity_id=player, blocking=True)
+        if restore_volume:
+            for entity, raw in preview["volume"].items():
+                await self._vol_restore(entity, raw)
+        self._publish_room(room_id)
+        _LOGGER.info("Preview ended in room '%s'", room_id)
+        return preview
 
     # ===================================================================== #
     # Media + volume plumbing                                               #

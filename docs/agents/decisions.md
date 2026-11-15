@@ -4,6 +4,10 @@
 
 - CLAUDE.md is tracked and public; house-specific details (hosts, IPs, room records, entity ids, local dashboards, live voice config) live in the untracked CLAUDE.local.md. User-settled, audit 2026-11-15.
 
+- The repo has no test harness; changes (not only voice) are verified by live smoke runs, each test-plan row a step. User-settled, slice alarm-preview.
+
+- A slice may merge with some smoke rows unrun when the user calls it good; the ledger names the rows skipped. User-settled, slice alarm-preview.
+
 ## Services and entities
 
 - `set_config` writes the config entry's options (the options form's store) instead of the engine Store, so a reload can't revert it. User-settled, audit 2026-11-15.
