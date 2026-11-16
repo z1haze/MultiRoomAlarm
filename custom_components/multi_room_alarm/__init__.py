@@ -2,7 +2,7 @@
 
 Layout:
     const.py        constants + the room-record schema (ROOM_KEYS)
-    coordinator.py  AlarmClockEngine — persistence, scheduler, fire/ring/snooze
+    coordinator.py  AlarmClockEngine — persistence, scheduler, fire/ring/snooze, preview
     services.py     the multi_room_alarm.* services (thin engine wrappers;
                     set_config writes the entry's options)
     llm_api.py      the "Alarm Clock" LLM API (set / list / stop / snooze tools)

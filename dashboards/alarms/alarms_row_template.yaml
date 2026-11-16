@@ -87,6 +87,14 @@ alarm_row:
   triggers_update: sensor.alarms
   variables:
     slot: 0
+    # This row's alarm: the room's alarms (room from the url_path), by time.
+    alarm: >
+      [[[
+        const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+        const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
+        const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
+        return list[variables.slot];
+      ]]]
   show_icon: false
   show_name: true
   show_label: true
@@ -96,17 +104,11 @@ alarm_row:
     data:
       id: >
         [[[
-          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-          return list[variables.slot]?.id;
+          return variables.alarm?.id;
         ]]]
       enabled: >
         [[[
-          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-          return !list[variables.slot]?.enabled;
+          return !variables.alarm?.enabled;
         ]]]
   hold_action:
     action: call-service
@@ -116,17 +118,11 @@ alarm_row:
     data:
       id: >
         [[[
-          const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-          const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-          const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-          return list[variables.slot]?.id;
+          return variables.alarm?.id;
         ]]]
   name: >
     [[[
-      const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-      const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-      const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-      const a = list[variables.slot];
+      const a = variables.alarm;
       if (!a) return '';
       let [h, m] = a.time.split(':').map(Number);
       const ap = h < 12 ? 'AM' : 'PM';
@@ -135,10 +131,7 @@ alarm_row:
     ]]]
   label: >
     [[[
-      const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-      const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-      const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-      const a = list[variables.slot];
+      const a = variables.alarm;
       if (!a) return '';
       let when;
       if (a.date) {
@@ -168,39 +161,31 @@ alarm_row:
         show_name: false
         icon: >
           [[[
-            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+            const a = variables.alarm;
             const st = hass.states['sensor.alarms']?.attributes || {};
-            const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-            const a = list[variables.slot];
-            return a && (st.previewing || {})[room] === a.id ? 'mdi:stop-circle-outline' : 'mdi:play-circle-outline';
+            return a && (st.previewing || {})[a.room] === a.id ? 'mdi:stop-circle-outline' : 'mdi:play-circle-outline';
           ]]]
         tap_action:
           action: call-service
           service: >
             [[[
-              const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+              const a = variables.alarm;
               const st = hass.states['sensor.alarms']?.attributes || {};
-              const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-              const a = list[variables.slot];
-              return a && (st.previewing || {})[room] === a.id
+              return a && (st.previewing || {})[a.room] === a.id
                 ? 'multi_room_alarm.preview_stop' : 'multi_room_alarm.preview';
             ]]]
           data:
             id: >
               [[[
-                const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+                const a = variables.alarm;
                 const st = hass.states['sensor.alarms']?.attributes || {};
-                const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-                const a = list[variables.slot];
-                return a && (st.previewing || {})[room] !== a.id ? a.id : undefined;
+                return a && (st.previewing || {})[a.room] !== a.id ? a.id : undefined;
               ]]]
             room: >
               [[[
-                const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
+                const a = variables.alarm;
                 const st = hass.states['sensor.alarms']?.attributes || {};
-                const list = (st.alarms || []).filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-                const a = list[variables.slot];
-                return a && (st.previewing || {})[room] === a.id ? room : undefined;
+                return a && (st.previewing || {})[a.room] === a.id ? a.room : undefined;
               ]]]
         styles:
           card:
@@ -212,19 +197,13 @@ alarm_row:
             - height: 48px
             - display: >
                 [[[
-                  const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-                  const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-                  const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-                  return list[variables.slot]?.sound ? 'block' : 'none';
+                  return variables.alarm?.sound ? 'block' : 'none';
                 ]]]
           icon:
             - width: 32px
     toggle: >
       [[[
-        const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-        const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-        const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-        const a = list[variables.slot];
+        const a = variables.alarm;
         if (!a) return '';
         const on = !!a.enabled;
         return `<div style="width:48px;height:28px;border-radius:14px;position:relative;flex:0 0 auto;
@@ -244,17 +223,11 @@ alarm_row:
       - padding: 24px 20px
       - display: >
           [[[
-            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-            const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-            const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-            return list[variables.slot] ? 'block' : 'none';
+            return variables.alarm ? 'block' : 'none';
           ]]]
       - opacity: >
           [[[
-            const room = (location.pathname.split('/')[1] || '').split('-dashboard')[0];
-            const all = hass.states['sensor.alarms']?.attributes?.alarms || [];
-            const list = all.filter(a => a.room === room).sort((x, y) => x.time.localeCompare(y.time));
-            return list[variables.slot]?.enabled ? '1' : '0.5';
+            return variables.alarm?.enabled ? '1' : '0.5';
           ]]]
     grid:
       - grid-template-areas: '"n play toggle" "l play toggle"'

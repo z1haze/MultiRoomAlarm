@@ -66,7 +66,7 @@ class _NamedRoomTool(_RoomTool):
     ) -> tuple[AlarmClockEngine | None, str | None, str | None]:
         """(engine, room id, error). A named room wins over the device's room;
         with neither, the error lists the rooms so the model can ask."""
-        engine = get_engine(hass)
+        engine, device_room = _RoomTool._resolve(hass, llm_context)
         if engine is None:
             return None, None, "The alarm clock isn't set up."
         rooms = _join(engine.room_choices())
@@ -79,13 +79,12 @@ class _NamedRoomTool(_RoomTool):
                     "its name or area name exactly; otherwise ask them which one."
                 )
             return engine, room, None
-        room = engine.resolve_room_for_device(llm_context.device_id)
-        if room is None:
+        if device_room is None:
             return engine, None, (
                 f"Which room? This device isn't in one. The rooms are: {rooms}. "
                 "Ask the user which one."
             )
-        return engine, room, None
+        return engine, device_room, None
 
 
 def _join(names: list[str]) -> str:

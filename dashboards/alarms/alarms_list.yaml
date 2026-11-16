@@ -27,7 +27,7 @@ cards:
         ha-card { background: none; box-shadow: none; border: none; }
     cards:
       # No variables.back -> the header derives "back" from the URL (dashboard
-      # home). The header pins itself (position: sticky) while the page scrolls.
+      # home). The header pins itself (position: fixed) while the page scrolls.
       - type: custom:button-card
         template: alarm_header
       - !include alarms_list_body.yaml

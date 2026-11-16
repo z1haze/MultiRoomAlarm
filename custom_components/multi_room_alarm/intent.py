@@ -62,7 +62,8 @@ class AlarmListIntent(intent.IntentHandler):
             return response
         room = engine.resolve_room_for_device(intent_obj.device_id)
         if room is None:
-            response.async_set_speech("I couldn't tell which room to check.")
+            rooms = ", ".join(engine.room_name(r) for r in engine.room_ids()) or "none set up"
+            response.async_set_speech(f"Which room? The rooms are: {rooms}.")
             return response
 
         cfg = engine.room(room) or {}

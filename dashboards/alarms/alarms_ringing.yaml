@@ -2,7 +2,7 @@
 #
 # A single card. !include it (`- !include alarms/alarms_ringing.yaml`) into every view
 # where a firing alarm should take over the screen — the Home view of each
-# dashboard, plus the alarms list.
+# dashboard.
 #
 # position:fixed, covers the viewport while this room's
 # binary_sensor.<...>_alarm_ringing (matched by the `_alarm_ringing` suffix plus its `room` attribute) is "on".

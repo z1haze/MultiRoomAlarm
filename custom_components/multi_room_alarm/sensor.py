@@ -92,7 +92,8 @@ class NextAlarmSensor(AlarmRoomEntity, SensorEntity):
 
 
 class AlarmsListSensor(AlarmBaseEntity, SensorEntity):
-    """Integration-wide: alarm count with the full list as an attribute.
+    """Integration-wide: alarm count with the full list and the
+    rooms previewing a song as attributes.
 
     Useful for a dashboard that renders capped alarm slots.
     """

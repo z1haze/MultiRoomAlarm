@@ -341,7 +341,8 @@ always act on the device's own room.
 
 `coordinator.py` holds one `AlarmClockEngine`: a JSON store
 (`.storage/multi_room_alarm`: `config`, `rooms`, `alarms`, `snoozes`), a
-minute-tick scheduler, and the fire / ring / snooze / stop logic. Everything
+minute-tick scheduler, the fire / ring / snooze / stop logic, and
+the song preview. Everything
 else (`services.py`, `llm_api.py`, `intent.py`, the sensors) is a thin wrapper
 over it — except `set_config`, which writes the integration's options. There is no polling and no cloud — `iot_class: local_push`.
 

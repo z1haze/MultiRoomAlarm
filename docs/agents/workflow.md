@@ -11,7 +11,7 @@ name; keep the headings.
 
 ## Read
 
-`CLAUDE.md`, `CLAUDE.local.md` (untracked, when present), `README.md`, `GLOSSARY.md` and `docs/adr/` (when present), `custom_components/multi_room_alarm/README.md`.
+`CLAUDE.md`, `CLAUDE.local.md` (untracked, when present), `README.md`, `GLOSSARY.md` and `docs/adr/` (when present).
 
 ## Gates
 
@@ -20,11 +20,11 @@ name; keep the headings.
 
 ## Smoke
 
-- **Live voice check**, when a commit (slice or audit) changes Python under `custom_components/multi_room_alarm/`
-  or `sentences/`:
-  restart HA, the user runs each voice command in the item's "Done when" list, and the result is checked in
-  Settings → Voice assistants → ⋮ → Debug (tool calls, args, response). `/slice` asks the user to run it and report.
-- New scenarios go in the spec's acceptance list as spoken commands with their expected result.
+- **Live check**, when a commit (slice or audit) changes `custom_components/multi_room_alarm/` or `dashboards/`:
+  restart HA (or reload the dashboard), the user runs each test-plan row — a spoken command, a dashboard tap, or a
+  Developer Tools call — and reports the result. Voice rows are checked in Settings → Voice assistants → ⋮ → Debug
+  (tool calls, args, response). `/slice` asks the user to run it and report.
+- New scenarios go in the spec's test plan as spoken commands, taps or service calls, each with its expected result.
 
 ## Backlog
 
@@ -63,9 +63,9 @@ name; keep the headings.
 ## Docs
 
 - `README.md`: when voice commands, actions/services, entities or dashboard cards change (matching section).
-- `custom_components/multi_room_alarm/README.md`: when the integration's user-facing behaviour changes.
 - `CLAUDE.md` "The alarm clock — as built": when module responsibilities or the data model change.
-- `services.yaml`, `strings.json`, `translations/en.json`: when a service or its fields change.
+- `services.yaml`: when a service or its fields change.
+- `strings.json`, `translations/en.json`: when a config-flow, options or entity string they carry changes.
 - `sentences/en.yaml`: when intents change.
 
 ## Commits

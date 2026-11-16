@@ -179,7 +179,7 @@ class AlarmClockEngine:
         }
 
         # Runtime-only state (cleared on restart).
-        self._ringing: dict[str, dict[str, Any]] = {}      # room_id -> {alarm_id, area, since}
+        self._ringing: dict[str, dict[str, Any]] = {}      # room_id -> {alarm_id, since}
         self._snoozed_pub: dict[str, dict[str, Any]] = {}  # room_id -> {until, wake_time}
         self._last_fired: dict[str, str] = {}              # alarm_id -> "YYYY-MM-DDTHH:MM"
         self._prev_volume: dict[str, dict[str, Any]] = {}  # room_id -> {entity: level before ring}
@@ -273,9 +273,6 @@ class AlarmClockEngine:
 
     def room_ids(self) -> list[str]:
         return list(self._data["rooms"].keys())
-
-    def room_area(self, room_id: str) -> str:
-        return (self.room(room_id) or {}).get("area", "")
 
     async def async_room_set(self, room_id: str, record: dict[str, Any]) -> None:
         """Create or fully replace a room record. Any key not supplied is
@@ -603,7 +600,7 @@ class AlarmClockEngine:
     # Published state — read by the binary_sensor / sensor entities          #
     # ===================================================================== #
     def ringing(self, room_id: str) -> dict[str, Any] | None:
-        """{alarm_id, area, since} while this room is ringing, else None."""
+        """{alarm_id, since} while this room is ringing, else None."""
         return self._ringing.get(room_id)
 
     def snoozed(self, room_id: str) -> dict[str, Any] | None:
@@ -635,11 +632,8 @@ class AlarmClockEngine:
         if device_id:
             device = dr.async_get(self.hass).async_get(device_id)
             if device and device.area_id:
-                area = ar.async_get(self.hass).async_get_area(device.area_id)
-                area_name = area.name.lower() if area else None
-                for room_id, room in self._data["rooms"].items():
-                    want = str(room.get("area", "")).strip().lower()
-                    if want and want in (device.area_id.lower(), area_name):
+                for room_id in self._data["rooms"]:
+                    if self._room_area_id(room_id) == device.area_id:
                         return room_id
         if len(self._data["rooms"]) == 1:
             return next(iter(self._data["rooms"]))
@@ -649,13 +643,22 @@ class AlarmClockEngine:
         """The room's display name ("Guest Room"), or its id if it has none."""
         return (self.room(room_id) or {}).get("name") or room_id
 
-    def room_area_name(self, room_id: str) -> str | None:
-        """Name of the HA area the room points at (its `area` is an id or a name)."""
-        ref = self.room_area(room_id).strip()
+    def _room_area_entry(self, room_id: str) -> ar.AreaEntry | None:
+        """The HA area the room points at. The one place that reads a room's
+        `area`, which may be an area id or an area name."""
+        ref = str((self.room(room_id) or {}).get("area", "")).strip()
         if not ref:
             return None
         area_reg = ar.async_get(self.hass)
-        area = area_reg.async_get_area(ref) or area_reg.async_get_area_by_name(ref)
+        return area_reg.async_get_area(ref) or area_reg.async_get_area_by_name(ref)
+
+    def _room_area_id(self, room_id: str) -> str | None:
+        area = self._room_area_entry(room_id)
+        return area.id if area else None
+
+    def room_area_name(self, room_id: str) -> str | None:
+        """Name of the HA area the room points at."""
+        area = self._room_area_entry(room_id)
         return area.name if area else None
 
     def room_choices(self) -> list[str]:
@@ -684,26 +687,16 @@ class AlarmClockEngine:
                 return room_id
         return None
 
-    def is_area_listening(self, area: str) -> bool:
-        """True while any assist_satellite in `area` is mid voice-interaction.
+    def is_area_listening(self, area_id: str | None) -> bool:
+        """True while any assist_satellite in the area is mid voice-interaction.
         The ring loop checks this and stays silent so the mic can hear "stop".
         Computed on demand — no dependency on any ducking integration."""
-        if not area:
+        if not area_id:
             return False
-        want = str(area).strip().lower()
-        area_reg = ar.async_get(self.hass)
-        for st in self.hass.states.async_all("assist_satellite"):
-            if st.state in _SATELLITE_IDLE:
-                continue
-            sat_area = self._satellite_area(st.entity_id)
-            if not sat_area:
-                continue
-            if sat_area.lower() == want:
-                return True
-            resolved = area_reg.async_get_area(sat_area)
-            if resolved and resolved.name.lower() == want:
-                return True
-        return False
+        return any(
+            st.state not in _SATELLITE_IDLE and self._satellite_area(st.entity_id) == area_id
+            for st in self.hass.states.async_all("assist_satellite")
+        )
 
     def _satellite_area(self, entity_id: str) -> str | None:
         entry = er.async_get(self.hass).async_get(entity_id)
@@ -751,7 +744,6 @@ class AlarmClockEngine:
         # Ringing state first — the dashboard overlay keys off this instantly.
         self._ringing[room_id] = {
             "alarm_id": alarm_id,
-            "area": room.get("area", ""),
             "since": dt_util.now().isoformat(timespec="seconds"),
         }
         self._publish_room(room_id)
@@ -781,7 +773,7 @@ class AlarmClockEngine:
         # never inherits the room's type (a "playlist" room would misplay it).
         ring_sound = sound or room.get("sound")
         ring_type = sound_type if sound else room.get("sound_type")
-        ring_volume = volume if volume is not None else room.get("alarm_volume")
+        ring_volume = self._target_volume(volume, room)
         self._ring_params[room_id] = {
             "alarm_id": alarm_id,
             "sound": ring_sound,
@@ -812,11 +804,11 @@ class AlarmClockEngine:
         volume_entities: list[str],
         sound: str | None,
         sound_type: str | None,
-        volume: Any,
+        target_vol: float,
     ) -> None:
         """Keep the alarm audible until `self._ringing` loses this room.
 
-        Runs as a background task. Forces `volume` on every volume entity
+        Runs as a background task. Forces `target_vol` on every volume entity
         (remembering the level to restore on stop), then starts playback:
         a custom `sound` via Music Assistant, else the bundled tone on the
         device player. Automatic fallback to the tone if the custom media
@@ -834,18 +826,12 @@ class AlarmClockEngine:
             _LOGGER.warning("Room '%s' has no player — alarm is silent", room_id)
             return
 
-        target_vol = normalize_volume(volume)
-        if target_vol is None:
-            target_vol = self.default_volume
-
         # Capture current levels once, so stop can restore them.
         if room_id not in self._prev_volume:
-            self._prev_volume[room_id] = {
-                e: raw for e in volume_entities if (raw := self._vol_get(e)) is not None
-            }
+            self._prev_volume[room_id] = self._vol_snapshot(volume_entities)
         await self._vol_force(volume_entities, target_vol)
 
-        area = self.room_area(room_id)
+        area_id = self._room_area_id(room_id)
 
         # Initial playback.
         using_tone = not bool(sound)
@@ -877,7 +863,7 @@ class AlarmClockEngine:
                 return
 
             # Mic is open in this room — go quiet, touch nothing.
-            if self.is_area_listening(area):
+            if self.is_area_listening(area_id):
                 continue
 
             for e in volume_entities:
@@ -961,8 +947,7 @@ class AlarmClockEngine:
         room = self.room(room_id) or {}
         self._ringing.pop(room_id, None)
         await self._stop_ring(room_id, self._all_players(room))
-        for entity, raw in self._prev_volume.pop(room_id, {}).items():
-            await self._vol_restore(entity, raw)
+        await self._vol_restore_all(self._prev_volume.pop(room_id, {}))
         self._publish_room(room_id)
 
     async def async_snooze(self, room_id: str, minutes: Any = None) -> dict[str, Any] | None:
@@ -1046,16 +1031,12 @@ class AlarmClockEngine:
         entities = self._volume_entities(room)
         record = {
             "alarm_id": alarm_id,
-            "volume": old["volume"] if old else {
-                e: raw for e in entities if (raw := self._vol_get(e)) is not None
-            },
+            "volume": old["volume"] if old else self._vol_snapshot(entities),
         }
         self._previews[room_id] = record
         self._publish_room(room_id)
 
-        volume = alarm.get("volume")
-        target = normalize_volume(volume if volume is not None else room.get("alarm_volume"))
-        await self._vol_force(entities, self.default_volume if target is None else target)
+        await self._vol_force(entities, self._target_volume(alarm.get("volume"), room))
         active = await self._play_custom(player, alarm["sound"], alarm.get("sound_type"))
         await self._set_repeat(active, "off")
 
@@ -1112,8 +1093,7 @@ class AlarmClockEngine:
             with contextlib.suppress(Exception):
                 await self._call("media_player", "media_stop", entity_id=player, blocking=True)
         if restore_volume:
-            for entity, raw in preview["volume"].items():
-                await self._vol_restore(entity, raw)
+            await self._vol_restore_all(preview["volume"])
         self._publish_room(room_id)
         _LOGGER.info("Preview ended in room '%s'", room_id)
         return preview
@@ -1230,6 +1210,20 @@ class AlarmClockEngine:
             else:
                 await self._call("media_player", "volume_set", entity_id=entity, volume_level=raw)
 
+    def _vol_snapshot(self, entities: Iterable[str]) -> dict[str, Any]:
+        """Current raw level of each entity, for _vol_restore_all() later."""
+        return {e: raw for e in entities if (raw := self._vol_get(e)) is not None}
+
+    async def _vol_restore_all(self, snapshot: dict[str, Any]) -> None:
+        for entity, raw in snapshot.items():
+            await self._vol_restore(entity, raw)
+
+    def _target_volume(self, volume: Any, room: dict[str, Any]) -> float:
+        """The level a ring or preview plays at: the alarm's own volume, else
+        the room's `alarm_volume`, else the default volume."""
+        v = normalize_volume(volume if volume is not None else room.get(ROOM_VOLUME_KEY))
+        return self.default_volume if v is None else v
+
     # --- what to play --------------------------------------------------- #
     def _tone_url(self) -> str:
         """URL of the bundled alarm tone. `tone_url` config overrides it (set
@@ -1283,7 +1277,7 @@ class AlarmClockEngine:
                 await self._call("music_assistant", "play_media", blocking=True, **data)
             return ma_player
         except (Exception, TimeoutError):  # noqa: BLE001
-            _LOGGER.warning("custom media '%s' on %s failed — will use the tone", sound, ma_player)
+            _LOGGER.warning("custom media '%s' on %s failed", sound, ma_player)
             return None
 
     async def _run_fire_targets(self, room: dict[str, Any]) -> None:
